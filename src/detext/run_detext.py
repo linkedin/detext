@@ -1,0 +1,247 @@
+import argparse
+import logging
+
+import tensorflow as tf
+import tensorflow_ranking as tfr
+from tensorflow.python.util import deprecation
+
+from detext.train import train
+from detext.utils import misc_utils
+
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+
+
+def add_arguments(parser):
+    """Build ArgumentParser."""
+    parser.register("type", "bool", lambda v: v.lower() == "true")
+
+    # network
+    parser.add_argument("--ftr_ext", choices=['cnn', 'bert', 'lstm_lm'], help="NLP feature extraction module.")
+    parser.add_argument("--num_units", type=int, default=128, help="word embedding size.")
+    parser.add_argument("--num_hidden", type=str, default='0', help="hidden size.")
+    parser.add_argument("--num_wide", type=int, default=0, help="number of wide features per doc.")
+    parser.add_argument("--num_wide_sp", type=int, default=None, help="number of sparse wide features per doc")
+    parser.add_argument("--ltr_loss_fn", type=str, default='pairwise', help="learning-to-rank method.")
+    parser.add_argument("--use_deep", type=str2bool, default=True, help="Whether to use deep features.")
+    parser.add_argument("--elem_rescale", type=str2bool, default=True,
+                        help="Whether to perform elementwise rescaling.")
+    parser.add_argument("--emb_sim_func", default='inner',
+                        help="Approach to computing query/doc similarity scores: "
+                             "inner/hadamard/concat or any combination of them separated by comma.")
+
+    # CNN related
+    parser.add_argument("--filter_window_sizes", type=str, default='3', help="CNN filter window sizes.")
+    parser.add_argument("--num_filters", type=int, default=100, help="number of CNN filters.")
+    parser.add_argument("--explicit_empty", type=str2bool, default=False,
+                        help="Explicitly modeling empty string in cnn")
+
+    # BERT related
+    parser.add_argument("--lr_bert", type=float, default=None, help="Learning rate factor for bert components")
+    parser.add_argument("--bert_config_file", type=str, default=None, help="bert config.")
+    parser.add_argument("--bert_checkpoint", type=str, default=None, help="pretrained bert model checkpoint.")
+
+    # LSTM related
+    parser.add_argument("--unit_type", type=str, default="lstm",
+                        help="RNN cell unit type. Support lstm/gru/layer_norm_lstm")
+    parser.add_argument("--num_layers", type=int, default=1, help="RNN layers")
+    parser.add_argument("--num_residual_layers", type=int, default=0,
+                        help="Number of residual layers from top to bottom. For example, if `num_layers=4` and "
+                             "`num_residual_layers=2`, the last 2 RNN cells in the returned list will be wrapped "
+                             "with `ResidualWrapper`.")
+    parser.add_argument("--forget_bias", type=float, default=1., help="Forget bias of RNN cell")
+    parser.add_argument("--rnn_dropout", type=float, default=0., help="Dropout of RNN cell")
+    parser.add_argument("--bidirectional", type=str2bool, default=False, help="Whether to use bidirectional RNN")
+
+    # Optimizer
+    parser.add_argument("--optimizer", type=str, choices=["sgd", "adam", "bert_adam"], default="sgd",
+                        help="Type of optimizer to use. bert_adam is similar to the optimizer implementation in bert.")
+    parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Clip gradients to this norm.")
+    parser.add_argument("--learning_rate", type=float, default=1.0, help="Learning rate. Adam: 0.001 | 0.0001")
+    parser.add_argument("--num_train_steps", type=int, default=1, help="Num steps to train.")
+    parser.add_argument("--num_warmup_steps", type=int, default=0, help="Num steps for warmup.")
+    parser.add_argument("--train_batch_size", type=int, default=32, help="Training data batch size.")
+    parser.add_argument("--test_batch_size", type=int, default=32, help="Test data batch size.")
+
+    # Data
+    parser.add_argument("--train_file", type=str, default=None, help="Train file.")
+    parser.add_argument("--dev_file", type=str, default=None, help="Dev file.")
+    parser.add_argument("--test_file", type=str, default=None, help="Test file.")
+    parser.add_argument("--out_dir", type=str, default=None, help="Store log/model files.")
+    parser.add_argument("--std_file", type=str, default=None, help="feature standardization file")
+    parser.add_argument("--max_len", type=int, default=32, help="max sent length.")
+    parser.add_argument("--min_len", type=int, default=3, help="min sent length.")
+
+    # Vocab and word embedding
+    parser.add_argument("--vocab_file", type=str, default=None, help="Vocab file")
+    parser.add_argument("--we_file", type=str, default=None, help="Pretrained word embedding file")
+    parser.add_argument("--we_trainable", type=str2bool, default=True, help="Whether to train word embedding")
+    parser.add_argument("--PAD", type=str, default="[PAD]", help="Token for padding")
+    parser.add_argument("--SEP", type=str, default="[SEP]", help="Token for sentence separation")
+    parser.add_argument("--CLS", type=str, default="[CLS]", help="Token for start of sentence")
+    parser.add_argument("--UNK", type=str, default="[UNK]", help="Token for unknown word")
+    parser.add_argument("--MASK", type=str, default="[MASK]", help="Token for masked word")
+
+    # Misc
+    parser.add_argument("--random_seed", type=int, default=1234, help="Random seed (>0, set a specific seed).")
+    parser.add_argument("--steps_per_stats", type=int, default=100, help="training steps to print statistics.")
+    parser.add_argument("--steps_per_eval", type=int, default=1000, help="training steps to evaluate datasets.")
+    parser.add_argument("--keep_checkpoint_max", type=int, default=5,
+                        help="The maximum number of recent checkpoint files to keep. If 0, all checkpoint "
+                             "files are kept. Defaults to 5")
+    parser.add_argument("--feature_names", type=str, default=None, help="the feature names.")
+    parser.add_argument("--lambda_metric", type=str, default=None, help="only support ndcg.")
+    parser.add_argument("--init_weight", type=float, default=0.1, help="weight initialization value.")
+    parser.add_argument("--pmetric", type=str, default=None, help="Primary metric.")
+    parser.add_argument("--all_metrics", type=str, default=None, help="All metrics.")
+    parser.add_argument("--score_rescale", type=str, default=None, help="The mean and std of previous model.")
+    parser.add_argument("--tokenization", type=str, default='punct', choices=['plain', 'punct'],
+                        help="The tokenzation performed for data preprocessing. "
+                             "Currently support: punct/plain(no split). "
+                             "Note that this should be set correctly to ensure consistency for savedmodel.")
+
+    parser.add_argument("--resume_training", type=str2bool, default=False,
+                        help="Whether to resume training from checkpoint in out_dir.")
+    parser.add_argument("--metadata_path", type=str, default=None,
+                        help="The metadata_path for converted avro2tf avro data.")
+
+    # tf-ranking related
+    parser.add_argument("--use_tfr_loss", type=str2bool, default=False, help="whether to use tf-ranking loss.")
+    parser.add_argument('--tfr_loss_fn',
+                        choices=[
+                            tfr.losses.RankingLossKey.SOFTMAX_LOSS,
+                            tfr.losses.RankingLossKey.PAIRWISE_LOGISTIC_LOSS],
+                        default=tfr.losses.RankingLossKey.SOFTMAX_LOSS,
+                        help="softmax_loss")
+    parser.add_argument('--tfr_lambda_weights', type=str, default=None)
+
+
+def str2bool(v):
+    if v.lower() in ('true', '1'):
+        return True
+    elif v.lower() in ('false', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def create_hparams(flags):
+    """Create training hparams."""
+    return tf.contrib.training.HParams(
+        # Data
+        ftr_ext=flags.ftr_ext,
+        filter_window_sizes=flags.filter_window_sizes,
+        num_units=flags.num_units,
+        num_filters=flags.num_filters,
+        num_hidden=flags.num_hidden,
+        num_wide=flags.num_wide,
+        ltr_loss_fn=flags.ltr_loss_fn,
+        use_deep=flags.use_deep,
+        elem_rescale=flags.elem_rescale,
+        emb_sim_func=flags.emb_sim_func,
+        optimizer=flags.optimizer,
+        max_gradient_norm=flags.max_gradient_norm,
+        learning_rate=flags.learning_rate,
+        lr_bert=flags.lr_bert,
+        num_train_steps=flags.num_train_steps,
+        num_warmup_steps=flags.num_warmup_steps,
+        train_batch_size=flags.train_batch_size,
+        test_batch_size=flags.test_batch_size,
+        train_file=flags.train_file,
+        dev_file=flags.dev_file,
+        test_file=flags.test_file,
+        out_dir=flags.out_dir,
+        vocab_file=flags.vocab_file,
+        we_file=flags.we_file,
+        we_trainable=flags.we_trainable,
+        random_seed=flags.random_seed,
+        steps_per_stats=flags.steps_per_stats,
+        steps_per_eval=flags.steps_per_eval,
+        keep_checkpoint_max=flags.keep_checkpoint_max,
+        max_len=flags.max_len,
+        min_len=flags.min_len,
+        feature_names=flags.feature_names,
+        lambda_metric=flags.lambda_metric,
+        bert_config_file=flags.bert_config_file,
+        bert_checkpoint=flags.bert_checkpoint,
+        init_weight=flags.init_weight,
+        pmetric=flags.pmetric,
+        std_file=flags.std_file,
+        num_wide_sp=flags.num_wide_sp,
+        all_metrics=flags.all_metrics,
+        score_rescale=flags.score_rescale,
+        explicit_empty=flags.explicit_empty,
+        tokenization=flags.tokenization,
+        unit_type=flags.unit_type,
+        num_layers=flags.num_layers,
+        num_residual_layers=flags.num_residual_layers,
+        forget_bias=flags.forget_bias,
+        rnn_dropout=flags.rnn_dropout,
+        bidirectional=flags.bidirectional,
+        PAD=flags.PAD,
+        SEP=flags.SEP,
+        CLS=flags.CLS,
+        UNK=flags.UNK,
+        MASK=flags.MASK,
+        resume_training=flags.resume_training,
+        metadata_path=flags.metadata_path,
+        tfr_loss_fn=flags.tfr_loss_fn,
+        tfr_lambda_weights=flags.tfr_lambda_weights,
+        use_tfr_loss=flags.use_tfr_loss
+    )
+
+
+def get_hparams(argv):
+    """
+    Get hyper-parameters.
+    """
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    hparams, unknown_params = parser.parse_known_args(argv)
+    hparams = create_hparams(hparams)
+
+    # Print all hyper-parameters
+    for k, v in sorted(vars(hparams).items()):
+        print("--{}={}".format(k, v))
+
+    return hparams
+
+
+def main(argv):
+    """
+    This is the main method for training the model.
+    :param argv: training parameters
+    :return:
+    """
+
+    # Get hyper-parameters.
+    hparams = get_hparams(argv)
+
+    # If not resume training from checkpoints, delete output directory.
+    if not hparams.resume_training:
+        logging.info("Removing previous output directory...")
+        if tf.io.gfile.exists(hparams.out_dir):
+            tf.io.gfile.rmtree(hparams.out_dir)
+
+    # If output directory deleted or does not exist, create the directory.
+    if not tf.io.gfile.exists(hparams.out_dir):
+        logging.info('Creating dirs recursively at: %s' % hparams.out_dir)
+        tf.io.gfile.makedirs(hparams.out_dir)
+
+    misc_utils.save_hparams(hparams.out_dir, hparams)
+
+    # set up logger
+    # sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'logging.txt'))
+
+    hparams = misc_utils.extend_hparams(hparams)
+
+    # Set logging verbosity.
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
+
+    logging.info("***********DeText Training***********")
+
+    # Train and evaluate DeText model
+    train.train(hparams)
+
+
+if __name__ == '__main__':
+    tf.compat.v1.app.run(main=main)
