@@ -88,6 +88,12 @@ cd src/detext/resources
 bash run_detext.sh
 ```
 
+### DeText training manual
+
+Users have full control for custom designing DeText models. In the training manual ([TRAINING.md](TRAINING.md)), users can find information about the following:
+* Training data format and preparation
+* Key parameters to customize and train DeText models
+* Detailed information about all DeText training parameters for full customization
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.

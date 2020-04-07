@@ -1,7 +1,7 @@
-DeText training data and parameters
+DeText Training Manual
 ==========
 
-## Training data format
+## Training data format and preparation
 
 DeText uses TFRecords format for training data.  In general, the input data should have:
 * One field for "query" with name `query`
@@ -24,7 +24,7 @@ We show an example of the prepared training data and explain the data format and
     * ["creating a linked ##in group", "edit your profile"...]
 
 
-## Training a DeText model
+## Customizing and training a DeText model
 
 The following example (from [run_detext.sh](src/detext/resources/run_detext.sh)) shows how you could train a DeText CNN model for a search ranking task. 
 
@@ -70,9 +70,9 @@ python run_detext.py \
 
 The primary parameters are included with comments. Please also find the complete list of training parameters in the next section.
 
-# List of parameters
+# List of all DeText parameters
 
-A complete list of training parameters that DeText provides is given below. 
+A complete list of training parameters that DeText provides is given below. Users can refer to this table for full customization when designing DeText models.
 
 |               | Parameter Name           | Type     | Choices                                                                                  | Default                                | Description                                                                                                                                                                                                    |
 |---------------|--------------------------|----------|------------------------------------------------------------------------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

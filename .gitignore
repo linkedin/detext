@@ -34,3 +34,4 @@
 TEST-*.xml
 __pycache__/
 /*/build
+.DS_Store
