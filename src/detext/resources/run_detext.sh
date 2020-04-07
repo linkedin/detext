@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 python ../run_detext.py \
---elem_rescale=True \
---emb_sim_func=inner \
---filter_window_sizes=3 \
 --ftr_ext=cnn \
 --feature_names=query,label,wide_ftrs,doc_title \
---init_weight=0.02 \
---lambda_metric=None \
 --learning_rate=0.001 \
 --ltr=softmax \
---max_gradient_norm=1.0 \
 --max_len=32 \
 --min_len=3 \
 --num_fields=1 \
+--filter_window_sizes=3 \
 --num_filters=50 \
 --num_hidden=100 \
 --num_train_steps=10 \

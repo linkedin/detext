@@ -80,8 +80,8 @@ py.test test
 ```
 
 ### Running DeText model training toy example
-The main script for running DeText model training is through `src/detext/run_detext.py`. Users could customize the 
-hyperparmeters based on different requirements for specific tasks. For a test run on a small sample dataset, please 
+The main script for running DeText model training is through `src/detext/run_detext.py`. Users could customize the hyperparmeters based on different requirements for specific tasks. Please refer to [TRAINING.md](TRAINING.md) for more details on the training data format and hyperparameter description. 
+For a test run on a small sample dataset, please 
 checkout the following script.
 ```$xslt
 cd src/detext/resources
