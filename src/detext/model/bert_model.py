@@ -5,10 +5,10 @@ Different from CNN, there is only one BERT model that generates the text embeddi
 
 import tensorflow as tf
 
-from detext.model.bert import modeling
+from detext.bert_embedding_extraction.bert_utils import create_bert_model, init_from_checkpoint
 
 
-class BertModel:
+class BertModel(object):
     """Apply BERT to convert text to a fix length embedding."""
 
     def __init__(self,
@@ -113,20 +113,17 @@ class BertModel:
         # 2. apply bert
         self.text_ftr_size = hparams.num_units
 
-        bertm = modeling.BertModel(
-            config=hparams.bert_config,
-            is_training=False,  # self.mode == tf.contrib.learn.ModeKeys.TRAIN,
+        bertm = create_bert_model(
+            bert_config_path=hparams.bert_config_file,
+            is_training=False,
             input_ids=self.bert_input_ids,
             input_mask=self.bert_input_mask,
-            use_one_hot_embeddings=False)
+            use_one_hot_embeddings=False
+        )
 
         # initialize bert with pretrained checkpoint
         if self.mode == tf.estimator.ModeKeys.TRAIN and self.hparams.bert_checkpoint is not None:
-            tvars = tf.trainable_variables()
-            assignment_map, initialized_variable_names = modeling.get_assignment_map_from_checkpoint(tvars,
-                                                                                                     self.hparams.bert_checkpoint)
-            tf.train.init_from_checkpoint(self.hparams.bert_checkpoint, assignment_map)
-            print("{} variables are initialized from bert pretrained model".format(len(initialized_variable_names)))
+            init_from_checkpoint(self.hparams.bert_checkpoint)
 
         # 3. get query embedding and doc_fields embedding
         last_layer = tf.squeeze(bertm.get_all_encoder_layers()[-1][:, 0:1, :], axis=1)

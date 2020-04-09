@@ -7,7 +7,7 @@ import tensorflow as tf
 from detext.utils import model_utils
 
 
-class CnnModel:
+class CnnModel(object):
 
     def __init__(self,
                  query,
@@ -36,7 +36,7 @@ class CnnModel:
         self.text_ftr_size = len(hparams.filter_window_sizes) * hparams.num_filters
 
         self.embedding = model_utils.init_word_embedding(self._hparams, self._mode)
-        with tf.compat.v1.variable_scope("cnn", dtype=tf.float32):
+        with tf.variable_scope("cnn", dtype=tf.float32):
             self.query_ftrs = self.apply_cnn_on_query() if query is not None else None
             self.usr_ftrs = self.apply_cnn_on_usr() if usr_fields is not None else None
             self.doc_ftrs = self.apply_cnn_on_doc()
@@ -92,7 +92,7 @@ class CnnModel:
         """
 
         # doc_fields should be the doc embeddings
-        if not isinstance(self._doc_fields, list):
+        if type(self._doc_fields) is not list:
             return self._doc_fields
 
         hparams = self._hparams
@@ -112,7 +112,7 @@ class CnnModel:
                                                hparams.filter_window_sizes,
                                                hparams.num_filters,
                                                hparams.num_units,
-                                               'doc_cnn_{}_'.format(i),
+                                               'doc_cnn_' + str(i) + '_',
                                                doc_length,
                                                set_empty_zero=hparams.explicit_empty)
             # restore batch_size and group_size

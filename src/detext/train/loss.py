@@ -1,5 +1,5 @@
 """
-Softmax loss.
+softmax loss.
 """
 
 import tensorflow as tf
@@ -44,5 +44,27 @@ def compute_logsumexp_mask(scores, mask):
     max_scores = tf.reduce_max(scores, axis=-1, keepdims=True)
     scores = scores - max_scores
     exp_score_withmask = tf.exp(scores) * tf.cast(mask, dtype=tf.float32)
-    logsumexp = tf.math.log(tf.reduce_sum(exp_score_withmask, axis=-1)) + tf.squeeze(max_scores, -1)
+    logsumexp = tf.log(tf.reduce_sum(exp_score_withmask, axis=-1)) + tf.squeeze(max_scores, -1)
     return logsumexp
+
+
+def compute_regularization_penalty(hparams):
+    """ Returns the regularization penalty specified in hparams """
+    penalty = 0
+    if hparams.l1 is not None and hparams.l1 != 0:
+        regularizer = tf.contrib.layers.l1_regularizer(scale=hparams.l1)
+        penalty += compute_penalty_given_regularizer(regularizer)
+    if hparams.l2 is not None and hparams.l2 != 0:  # L2 loss in TensorFlow is computed as 1/2*sum(weights**2)
+        regularizer = tf.contrib.layers.l2_regularizer(scale=hparams.l2)
+        penalty += compute_penalty_given_regularizer(regularizer)
+    return penalty
+
+
+def compute_penalty_given_regularizer(regularizer):
+    """ Returns penalty given regularizer
+
+    This function applies to all trainable variables
+    """
+    weights = tf.trainable_variables()
+    regularization_penalty = tf.contrib.layers.apply_regularization(regularizer, weights)
+    return regularization_penalty

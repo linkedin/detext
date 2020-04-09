@@ -53,18 +53,20 @@ class TestCNNModel(tf.test.TestCase):
                                      usr_fields,
                                      hparams=hparams,
                                      mode=tf.estimator.ModeKeys.EVAL)
+            text_ftr_size = hparams.num_filters * len(hparams.filter_window_sizes)
 
             with tf.Session() as sess:
                 sess.run(tf.global_variables_initializer())
                 query_ftrs, doc_ftrs, usr_ftrs = sess.run((cnn.query_ftrs, cnn.doc_ftrs, cnn.usr_ftrs))
-                self.assertAllEqual(query_ftrs.shape, [2, hparams.num_filters * len(hparams.filter_window_sizes)])
-                self.assertAllEqual(doc_ftrs.shape, [2, 3, 2, hparams.num_filters * len(hparams.filter_window_sizes)])
-                self.assertAllEqual(usr_ftrs.shape, [2, 3, hparams.num_filters * len(hparams.filter_window_sizes)])
+                self.assertEquals(text_ftr_size, cnn.text_ftr_size)
+                self.assertAllEqual(query_ftrs.shape, [2, text_ftr_size])
+                self.assertAllEqual(doc_ftrs.shape, [2, 3, 2, text_ftr_size])
+                self.assertAllEqual(usr_ftrs.shape, [2, 3, text_ftr_size])
                 # 1st query, 2nd doc, 2nd field should be the same as 2nd query, 1st doc, 2nd field (20, 5, 3, 1)
                 self.assertAllEqual(doc_ftrs[0, 1, 1], doc_ftrs[1, 0, 1])
                 # 1st query, 1st doc, 1st field should NOT be the same as 1st query, 1st doc, 2nd field (1, 2, 3, 0)
                 self.assertNotAllClose(doc_ftrs[0, 0, 0], doc_ftrs[0, 0, 1])
-                # 2nd query, 3rd doc, 2nd field should be all 0
+                # 2nd query, 3rd doc, 2nd field should be all 0 because non-padding word number == filter_window_size
                 self.assertAllEqual(doc_ftrs[1, 2, 1], tf.zeros([hparams.num_filters], dtype=tf.float32))
 
     def testCNNConsistency(self):

@@ -76,7 +76,7 @@ python setup.py develop
 Run all tests:
 
 ```bash
-py.test test 
+pytest 
 ```
 
 ### Running DeText model training toy example

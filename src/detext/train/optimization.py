@@ -1,5 +1,4 @@
 import re
-
 import tensorflow as tf
 
 
@@ -8,7 +7,7 @@ def create_optimizer(hparams, loss):
     Creates an optimizer training op.
     If the parameter lr_bert is specified, then use another adam for this learning rate.
     """
-    tvars = tf.compat.v1.trainable_variables()
+    tvars = tf.trainable_variables()
 
     # Print trainable variables
     print("# Trainable variables")
@@ -19,7 +18,7 @@ def create_optimizer(hparams, loss):
             for s in param.get_shape():
                 psize *= s
             total_param += psize
-        print("  {}, {}, {}".format(param.name, param.get_shape(), param.op.device))
+        print("  %s, %s, %s" % (param.name, str(param.get_shape()), param.op.device))
     print('total bert parameters:', total_param)
 
     # Define optimizer parameters
@@ -28,14 +27,14 @@ def create_optimizer(hparams, loss):
     num_warmup_steps = hparams.num_warmup_steps
     lr_bert = hparams.lr_bert
 
-    global_step = tf.compat.v1.train.get_or_create_global_step()
+    global_step = tf.train.get_or_create_global_step()
 
     learning_rate = tf.constant(value=init_lr, shape=[], dtype=tf.float32)
 
     if hparams.optimizer == "bert_adam":
         # Using optimizer with bert's implementation
         # Implements linear decay of the learning rate.
-        learning_rate = tf.compat.v1.train.polynomial_decay(
+        learning_rate = tf.train.polynomial_decay(
             learning_rate,
             global_step,
             num_train_steps,
@@ -69,7 +68,15 @@ def create_optimizer(hparams, loss):
             epsilon=1e-6,
             exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
 
-        grads = tf.gradients(loss, tvars)
+        if hparams.use_horovod:
+            import horovod.tensorflow as hvd
+            # Horovod's distributed optimizer handles allreduce calls, synchronous only
+            optimizer = hvd.DistributedOptimizer(optimizer, sparse_as_dense=True)
+            grads_and_vars = optimizer.compute_gradients(loss, tvars)
+            grads = [grad for grad, var in grads_and_vars]
+            tvars = [var for grad, var in grads_and_vars]
+        else:
+            grads = tf.gradients(loss, tvars)
 
         grads, grad_norm = tf.clip_by_global_norm(grads, clip_norm=1.0)
 
@@ -119,7 +126,6 @@ def create_optimizer(hparams, loss):
     elif hparams.optimizer == "sgd":
         opt = tf.train.GradientDescentOptimizer(learning_rate)
     elif hparams.optimizer == "adam":
-        assert float(hparams.learning_rate) <= 0.002, "! High Adam learning rate %g" % hparams.learning_rate
         opt = tf.train.AdamOptimizer(learning_rate)
     else:
         raise ValueError("Only support sgd/adam/bert_adam as optimizer option")
@@ -162,13 +168,13 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
 
             param_name = self._get_variable_name(param.name)
 
-            m = tf.compat.v1.get_variable(
+            m = tf.get_variable(
                 name=param_name + "/adam_m",
                 shape=param.shape.as_list(),
                 dtype=tf.float32,
                 trainable=False,
                 initializer=tf.zeros_initializer())
-            v = tf.compat.v1.get_variable(
+            v = tf.get_variable(
                 name=param_name + "/adam_v",
                 shape=param.shape.as_list(),
                 dtype=tf.float32,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-python ../run_detext.py \
+PYTHONPATH=../.. python ../run_detext.py \
 --ftr_ext=cnn \
 --feature_names=query,label,wide_ftrs,doc_title \
 --emb_sim_func=inner \
@@ -7,7 +7,6 @@ python ../run_detext.py \
 --ltr=softmax \
 --max_len=32 \
 --min_len=3 \
---num_fields=1 \
 --filter_window_sizes=3 \
 --num_filters=50 \
 --num_hidden=100 \
@@ -21,10 +20,9 @@ python ../run_detext.py \
 --steps_per_eval=2 \
 --test_batch_size=2 \
 --train_batch_size=2 \
---use_wide=True \
 --use_deep=True \
 --dev_file=hc_examples.tfrecord \
 --test_file=hc_examples.tfrecord \
 --train_file=hc_examples.tfrecord \
 --vocab_file=vocab.txt \
---out_dir=detext-output/hc_cnn_f50_u32_h100 \
+--out_dir=/tmp/detext-output/hc_cnn_f50_u32_h100 \

@@ -44,7 +44,8 @@ class OptimizationTest(tf.test.TestCase):
                 num_train_steps=100,
                 num_warmup_steps=0,
                 lr_bert=0.00001,
-                optimizer="bert_adam"
+                optimizer="bert_adam",
+                use_horovod=False
             )
             train_op, _, _ = optimization.create_optimizer(hparams, loss)
 

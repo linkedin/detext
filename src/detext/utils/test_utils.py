@@ -1,10 +1,9 @@
 """
 A lot of non-tensorflow implementation.  This is mainly used for testing.
 """
-
+import argparse
 import math
 import numpy as np
-
 
 def neg_log_sigmoid(x):
     """Negative log sigmoid"""
@@ -130,3 +129,29 @@ def compute_ndcg_ps_parity_check(scores, labels, topk=10):
     :return: ndcg score as float
     """
     return compute_ndcg_ps_parity_check_original_api(list(zip(scores, labels, scores)), topk)
+
+
+def add_arguments(parser):
+    """Build ArgumentParser."""
+
+    # network
+    parser.add_argument("--model_dir", type=str, help="exported model dir")
+    parser.add_argument("--test_files", type=str, help="test files to be evaluated on")
+    parser.add_argument("--doc_text_fields", type=str, help="document text fields")
+    parser.add_argument("--usr_text_fields", type=str, help="user text fields")
+    parser.add_argument("--num_wide", type=int, help="number of wide features per doc")
+    parser.add_argument("--output_dir", type=str, help="result file written in output dir")
+
+
+def get_params(argv):
+    """
+    Get hyper-parameters.
+    """
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    hparams, unknown_params = parser.parse_known_args(argv)
+
+    # Print all hyper-parameters
+    for k, v in sorted(vars(hparams).items()):
+        print('--' + k + '=' + str(v))
+    return hparams

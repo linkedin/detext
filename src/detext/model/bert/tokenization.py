@@ -154,7 +154,7 @@ def whitespace_tokenize(text):
   return tokens
 
 
-class FullTokenizer():
+class FullTokenizer(object):
   """Runs end-to-end tokenziation."""
 
   def __init__(self, vocab_file, do_lower_case=True):
@@ -175,7 +175,10 @@ class FullTokenizer():
     return convert_by_vocab(self.vocab, tokens)
 
   def convert_ids_to_tokens(self, ids):
-    return convert_by_vo):
+    return convert_by_vocab(self.inv_vocab, ids)
+
+
+class BasicTokenizer(object):
   """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
 
   def __init__(self, do_lower_case=True):
@@ -290,7 +293,7 @@ class FullTokenizer():
     return "".join(output)
 
 
-class WordpieceTokenizer():
+class WordpieceTokenizer(object):
   """Runs WordPiece tokenziation."""
 
   def __init__(self, vocab, unk_token="[UNK]", max_input_chars_per_word=200):

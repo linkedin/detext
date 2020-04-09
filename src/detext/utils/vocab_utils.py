@@ -1,13 +1,11 @@
 """
 Utility function for vocabulary
 """
-
 import gzip
 import os
 import re
-import string
-
 import six
+import string
 import tensorflow as tf
 from tensorflow.python.ops import lookup_ops
 
@@ -81,12 +79,15 @@ def split(s):
 
 def read_vocab(input_file):
     """Read vocabulary file and return a dict"""
+    if input_file is None:
+        return None
+
     vocab = {}
     if input_file.endswith('.gz'):
         f = tf.gfile.Open(input_file, 'r')
         fin = gzip.GzipFile(fileobj=f)
     else:
-        fin = tf.io.gfile.GFile(input_file, 'r')
+        fin = tf.gfile.Open(input_file, 'r')
     for line in fin:
         word = split(strip(line))[0]
         vocab[word] = len(vocab)
@@ -96,12 +97,15 @@ def read_vocab(input_file):
 
 def read_tf_vocab(input_file, UNK):
     """Read vocabulary and return a tf hashtable"""
+    if input_file is None:
+        return None
+
     keys, values = [], []
     if input_file.endswith('.gz'):
         f = tf.gfile.Open(input_file, 'r')
         fin = gzip.GzipFile(fileobj=f)
     else:
-        fin = tf.io.gfile.GFile(input_file, 'r')
+        fin = tf.gfile.Open(input_file, 'r')
     for line in fin:
         word = split(strip(line))[0]
         keys.append(word)
@@ -131,3 +135,13 @@ def extract_text_data(input_dir, output_file, text_fields):
                         if ' ' not in text:
                             continue
                         fout.write(text + '\n')
+
+
+if __name__ == '__main__':
+    input_dir = '/home/wguo/data/people_v6/NAV/train/'
+    output_file = '/home/wguo/data/people_v6/NAV/glove/text'
+    text_fields = ['query', 'doc_headlines', 'doc_currCompanies', 'doc_pastCompanies', 'doc_currTitles',
+                   'doc_pastTitles', 'doc_currSchools', 'doc_pastSchools']
+    extract_text_data(input_dir, output_file, text_fields)
+    # max_vocab_size = 100000
+    # generate_vocab_file(input_dir, output_file, max_vocab_size)
