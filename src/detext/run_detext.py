@@ -1,14 +1,18 @@
+"""
+Overall pipeline to train the model.  It parses arguments, and trains a CLSM model.
+"""
+
+import sys
 import argparse
 import logging
+import os
+import time
 
 import tensorflow as tf
 import tensorflow_ranking as tfr
-from tensorflow.python.util import deprecation
 
 from detext.train import train
-from detext.utils import misc_utils
-
-deprecation._PRINT_DEPRECATION_WARNINGS = False
+from detext.utils import misc_utils, logger, executor_utils
 
 
 def add_arguments(parser):
@@ -16,18 +20,25 @@ def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
 
     # network
-    parser.add_argument("--ftr_ext", choices=['cnn', 'bert', 'lstm_lm'], help="NLP feature extraction module.")
+    parser.add_argument("--ftr_ext", choices=['cnn', 'bert', 'lstm_lm', 'lstm'], help="NLP feature extraction module.")
     parser.add_argument("--num_units", type=int, default=128, help="word embedding size.")
+    parser.add_argument("--num_units_for_id_ftr", type=int, default=128, help="id feature embedding size.")
     parser.add_argument("--num_hidden", type=str, default='0', help="hidden size.")
     parser.add_argument("--num_wide", type=int, default=0, help="number of wide features per doc.")
     parser.add_argument("--num_wide_sp", type=int, default=None, help="number of sparse wide features per doc")
-    parser.add_argument("--ltr_loss_fn", type=str, default='pairwise', help="learning-to-rank method.")
     parser.add_argument("--use_deep", type=str2bool, default=True, help="Whether to use deep features.")
     parser.add_argument("--elem_rescale", type=str2bool, default=True,
                         help="Whether to perform elementwise rescaling.")
+
+    # Ranking specific
+    parser.add_argument("--ltr_loss_fn", type=str, default='pairwise', help="learning-to-rank method.")
     parser.add_argument("--emb_sim_func", default='inner',
                         help="Approach to computing query/doc similarity scores: "
                              "inner/hadamard/concat or any combination of them separated by comma.")
+
+    # Classification specific
+    parser.add_argument("--num_classes", type=int, default=1,
+                        help="Number of classes for multi-class classification tasks.")
 
     # CNN related
     parser.add_argument("--filter_window_sizes", type=str, default='3', help="CNN filter window sizes.")
@@ -51,6 +62,8 @@ def add_arguments(parser):
     parser.add_argument("--forget_bias", type=float, default=1., help="Forget bias of RNN cell")
     parser.add_argument("--rnn_dropout", type=float, default=0., help="Dropout of RNN cell")
     parser.add_argument("--bidirectional", type=str2bool, default=False, help="Whether to use bidirectional RNN")
+    parser.add_argument("--normalized_lm", type=str2bool, default=False,
+                        help="Whether to use normalized lm. This option only works for unit_type=lstm_lm")
 
     # Optimizer
     parser.add_argument("--optimizer", type=str, choices=["sgd", "adam", "bert_adam"], default="sgd",
@@ -58,9 +71,12 @@ def add_arguments(parser):
     parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Clip gradients to this norm.")
     parser.add_argument("--learning_rate", type=float, default=1.0, help="Learning rate. Adam: 0.001 | 0.0001")
     parser.add_argument("--num_train_steps", type=int, default=1, help="Num steps to train.")
+    parser.add_argument("--num_epochs", type=int, default=None, help="Num of epochs to train, will overwrite train_steps if set")
     parser.add_argument("--num_warmup_steps", type=int, default=0, help="Num steps for warmup.")
     parser.add_argument("--train_batch_size", type=int, default=32, help="Training data batch size.")
     parser.add_argument("--test_batch_size", type=int, default=32, help="Test data batch size.")
+    parser.add_argument("--l1", type=float, default=None, help="Scale of L1 regularization")
+    parser.add_argument("--l2", type=float, default=None, help="Scale of L2 regularization")
 
     # Data
     parser.add_argument("--train_file", type=str, default=None, help="Train file.")
@@ -80,6 +96,15 @@ def add_arguments(parser):
     parser.add_argument("--CLS", type=str, default="[CLS]", help="Token for start of sentence")
     parser.add_argument("--UNK", type=str, default="[UNK]", help="Token for unknown word")
     parser.add_argument("--MASK", type=str, default="[MASK]", help="Token for masked word")
+
+    # Vocab and word embedding for id features
+    parser.add_argument("--vocab_file_for_id_ftr", type=str, default=None, help="Vocab file for id features")
+    parser.add_argument("--we_file_for_id_ftr", type=str, default=None,
+                        help="Pretrained word embedding file for id features")
+    parser.add_argument("--we_trainable_for_id_ftr", type=str2bool, default=True,
+                        help="Whether to train word embedding for id features")
+    parser.add_argument("--PAD_FOR_ID_FTR", type=str, default="[PAD]", help="Padding token for id features")
+    parser.add_argument("--UNK_FOR_ID_FTR", type=str, default="[UNK]", help="Unknown word token for id features")
 
     # Misc
     parser.add_argument("--random_seed", type=int, default=1234, help="Random seed (>0, set a specific seed).")
@@ -114,6 +139,8 @@ def add_arguments(parser):
                         help="softmax_loss")
     parser.add_argument('--tfr_lambda_weights', type=str, default=None)
 
+    parser.add_argument('--use_horovod', type=str2bool, default=False, help="whether to use horovod for sync distributed training")
+
 
 def str2bool(v):
     if v.lower() in ('true', '1'):
@@ -131,6 +158,7 @@ def create_hparams(flags):
         ftr_ext=flags.ftr_ext,
         filter_window_sizes=flags.filter_window_sizes,
         num_units=flags.num_units,
+        num_units_for_id_ftr=flags.num_units_for_id_ftr,
         num_filters=flags.num_filters,
         num_hidden=flags.num_hidden,
         num_wide=flags.num_wide,
@@ -138,11 +166,13 @@ def create_hparams(flags):
         use_deep=flags.use_deep,
         elem_rescale=flags.elem_rescale,
         emb_sim_func=flags.emb_sim_func,
+        num_classes=flags.num_classes,
         optimizer=flags.optimizer,
         max_gradient_norm=flags.max_gradient_norm,
         learning_rate=flags.learning_rate,
         lr_bert=flags.lr_bert,
         num_train_steps=flags.num_train_steps,
+        num_epochs=flags.num_epochs,
         num_warmup_steps=flags.num_warmup_steps,
         train_batch_size=flags.train_batch_size,
         test_batch_size=flags.test_batch_size,
@@ -186,7 +216,19 @@ def create_hparams(flags):
         metadata_path=flags.metadata_path,
         tfr_loss_fn=flags.tfr_loss_fn,
         tfr_lambda_weights=flags.tfr_lambda_weights,
-        use_tfr_loss=flags.use_tfr_loss
+        use_tfr_loss=flags.use_tfr_loss,
+        use_horovod=flags.use_horovod,
+        normalized_lm=flags.normalized_lm,
+
+        # Vocab and word embedding for id features
+        PAD_FOR_ID_FTR=flags.PAD_FOR_ID_FTR,
+        UNK_FOR_ID_FTR=flags.UNK_FOR_ID_FTR,
+        vocab_file_for_id_ftr=flags.vocab_file_for_id_ftr,
+        we_file_for_id_ftr=flags.we_file_for_id_ftr,
+        we_trainable_for_id_ftr=flags.we_trainable_for_id_ftr,
+
+        l1=flags.l1,
+        l2=flags.l2,
     )
 
 
@@ -201,7 +243,7 @@ def get_hparams(argv):
 
     # Print all hyper-parameters
     for k, v in sorted(vars(hparams).items()):
-        print("--{}={}".format(k, v))
+        print('--' + k + '=' + str(v))
 
     return hparams
 
@@ -212,30 +254,50 @@ def main(argv):
     :param argv: training parameters
     :return:
     """
+    # Get executor task type from TF_CONFIG
+    task_type = executor_utils.get_executor_task_type()
 
     # Get hyper-parameters.
     hparams = get_hparams(argv)
 
-    # If not resume training from checkpoints, delete output directory.
-    if not hparams.resume_training:
-        logging.info("Removing previous output directory...")
-        if tf.io.gfile.exists(hparams.out_dir):
-            tf.io.gfile.rmtree(hparams.out_dir)
+    tf.logging.set_verbosity(tf.logging.INFO)
 
-    # If output directory deleted or does not exist, create the directory.
-    if not tf.io.gfile.exists(hparams.out_dir):
-        logging.info('Creating dirs recursively at: %s' % hparams.out_dir)
-        tf.io.gfile.makedirs(hparams.out_dir)
+    # if epoch is set, overwrite training steps
+    if hparams.num_epochs is not None:
+        hparams.num_train_steps = misc_utils.estimate_train_steps(
+            hparams.train_file,
+            hparams.num_epochs,
+            hparams.train_batch_size,
+            hparams.metadata_path is None)
 
-    misc_utils.save_hparams(hparams.out_dir, hparams)
+    # Create directory and launch tensorboard
+    if task_type == executor_utils.CHIEF or task_type == executor_utils.LOCAL_MODE:
+        # If not resume training from checkpoints, delete output directory.
+        if not hparams.resume_training:
+            logging.info("Removing previous output directory...")
+            if tf.gfile.Exists(hparams.out_dir):
+                tf.gfile.DeleteRecursively(hparams.out_dir)
 
-    # set up logger
-    # sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'logging.txt'))
+        # If output directory deleted or does not exist, create the directory.
+        if not tf.gfile.Exists(hparams.out_dir):
+            logging.info('Creating dirs recursively at: {0}'.format(hparams.out_dir))
+            tf.gfile.MakeDirs(hparams.out_dir)
+
+        misc_utils.save_hparams(hparams.out_dir, hparams)
+
+        # set up logger
+        sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'logging.txt'))
+    else:
+        # TODO: move removal/creation to a hadoopShellJob st. it does not reside in distributed training code.
+        logging.info("Waiting for chief to remove/create directories.")
+        # Wait for dir created form chief
+        time.sleep(10)
+
+    if task_type == executor_utils.EVALUATOR:
+        # set up logger for evaluator
+        sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'eval_log.txt'))
 
     hparams = misc_utils.extend_hparams(hparams)
-
-    # Set logging verbosity.
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
     logging.info("***********DeText Training***********")
 

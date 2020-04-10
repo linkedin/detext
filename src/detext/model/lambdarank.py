@@ -1,13 +1,12 @@
 """
 lambda rank implementation.
 """
-
 import tensorflow as tf
 
-from detext.model import metrics
+from detext.train import metrics
 
 
-class LambdaRank(tf.compat.v1.layers.Layer):
+class LambdaRank(tf.layers.Layer):
     """
     LambdaRank as the learning-to-rank function.
     For now, the current version does not implement the "lambda" part.
@@ -15,16 +14,19 @@ class LambdaRank(tf.compat.v1.layers.Layer):
 
     def __init__(self, lambda_metric=None):
         self.lambda_metric = lambda_metric
-        super().__init__()
+        super(LambdaRank, self).__init__()
+
+    def build(self, _):
+        super(LambdaRank, self).build(_)
 
     def call(self, scores, labels, group_size):
-        """
-        Compute the pairwise loss.
+        """ Compute the pairwise loss.
+
         :param scores: A tensor with shape [batch_size, max_group_size].  For each batch, the first element is the score of
         correct answer.
         :param labels: A matrix with shape [batch_size, max_group_size].  The true scores of each document.
         :param group_size: A vector with shape [batch_size], indicating how many documents each query has.
-        :return: lambdarank loss, with shape [batch_size, max_group_size]
+        :return: lambdarank loss and mask. Each with shape [batch_size, max_group_size, max_group_size]
         """
         # for a query, compute the pairwise doc score diff of any two documents.
         pair_score_diff = tf.expand_dims(scores, axis=2) - tf.expand_dims(scores, axis=1)

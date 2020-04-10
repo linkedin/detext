@@ -1,0 +1,52 @@
+{
+  "features" : [ {
+    "name" : "query",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "wide_ftrs",
+    "dtype" : "float",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "doc_headlines",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "doc_currCompanies",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "doc_currTitles",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "doc_prevCompanies",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  }, {
+    "name" : "doc_prevTitles",
+    "dtype" : "string",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  } ],
+  "labels" : [ {
+    "name" : "label",
+    "dtype" : "float",
+    "shape" : [ -1 ],
+    "numUniqueValues" : null,
+    "isSparse" : false
+  } ]
+}

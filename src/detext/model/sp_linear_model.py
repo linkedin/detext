@@ -15,10 +15,10 @@ class SparseLinearModel:
         CAVEAT: it is required that padding value = 0 for wide_ftrs_sp_idx in data_fn and padding value = 1 for
             wide_ftrs_sp_val since feature index 0 is used as the bias term.
 
-        :param num_wide_sp: Number of unique sparse wide features. This should be LARGER than the maximum of features
-            indices. Remember to add at least 1 to max(indices) avoid overflow due to padding
         :param wide_ftrs_sp_idx: Feature indices. Shape=[batch_size, max_group_size, max_wide_ftrs_size]
         :param wide_ftrs_sp_val: Feature values. Shape=[batch_size, max_group_size, max_wide_ftrs_size]
+        :param num_wide_sp: Number of unique sparse wide features. This should be LARGER than the maximum of
+            features indices. Remember to add at least 1 to max(indices) avoid overflow due to padding
         :param initializer: Weight initializer
         """
         wide_ftrs_sp_idx = tf.cast(wide_ftrs_sp_idx, dtype=tf.float32)
@@ -29,10 +29,10 @@ class SparseLinearModel:
 
         with tf.variable_scope('wide', reuse=tf.AUTO_REUSE):
             # Feature weights
-            self.ftrs_weight = tf.compat.v1.get_variable('wide_ftrs_sp_weight',
-                                                         shape=[num_wide_sp, 1],
-                                                         initializer=initializer,
-                                                         trainable=True)
+            self.ftrs_weight = tf.get_variable('wide_ftrs_sp_weight',
+                                               shape=[num_wide_sp, 1],
+                                               initializer=initializer,
+                                               trainable=True)
 
             # A hack to combine idx and val so that we can process them together in `tf.map_fn` later
             wide_ftrs_sp_idx_with_value = tf.concat([wide_ftrs_sp_idx, wide_ftrs_sp_val], axis=-1)

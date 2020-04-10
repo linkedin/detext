@@ -1,7 +1,6 @@
 """
 The deep match model.
 """
-
 import tensorflow as tf
 
 from detext.model import rep_model
@@ -21,7 +20,10 @@ class DeepMatch:
                  mode,
                  wide_ftrs_sp_idx=None,
                  wide_ftrs_sp_val=None,
-                 usr_fields=None):
+                 usr_fields=None,
+                 doc_id_fields=None,
+                 usr_id_fields=None,
+                 ):
         """
         Build the deep match graph.
         :param query: Tensor  Input query. Shape=[batch_size, query_length]
@@ -32,56 +34,60 @@ class DeepMatch:
             shape=[batch_size, max_group_size, doc_field_length]
         :param usr_fields: list(Tensor) or a pre-computed Tensor  List of user fields. Each has
             shape=[batch_size, usr_field_length]
+        :param doc_id_fields: list(Tensor)  List of user id fields. Each has shape=[batch_size, doc_id_field_length]
+        :param usr_id_fields: list(Tensor)  List of doc id fields. Each has shape=[batch_size, usr_id_field_length]
         :param hparams: HParams  Hyper parameters
         :param mode: TRAIN/EVAL/INFER
         """
         self._query = query
-        self._wide_ftrs = tf.where(tf.math.is_nan(wide_ftrs), tf.zeros_like(wide_ftrs),
+        self._wide_ftrs = tf.where(tf.is_nan(wide_ftrs), tf.zeros_like(wide_ftrs),
                                    wide_ftrs) if wide_ftrs is not None else wide_ftrs
         self._wide_ftrs_sp_idx = wide_ftrs_sp_idx
         self._wide_ftrs_sp_val = wide_ftrs_sp_val
+        self._usr_fields = usr_fields
         self._doc_fields = doc_fields
+        self._usr_id_fields = usr_id_fields
+        self._doc_id_fields = doc_id_fields
         self._hparams = hparams
         self._mode = mode
-        self._usr_fields = usr_fields
 
         self.batch_size, self.max_group_size = self.get_data_size()
 
-        if hparams.use_deep:
+        if hparams.use_deep is True:
             # Apply representation-based models
             self.deep_ftr_model = rep_model.RepModel(
-                self._query,
-                self._doc_fields,
-                self._usr_fields,
-                self._hparams,
-                self._mode
+                query=self._query,
+                doc_fields=self._doc_fields,
+                usr_fields=self._usr_fields,
+                doc_id_fields=self._doc_id_fields,
+                usr_id_fields=self._usr_id_fields,
+                hparams=self._hparams,
+                mode=self._mode
             )
-            # Assign a name to each text feature in the graph so that we can quickly locate them in the graph
-            for field in ['query_ftrs', 'usr_ftrs', 'doc_ftrs']:
-                field_tensor = getattr(self.deep_ftr_model.scoring_model, field)
-                if field_tensor is not None:
-                    setattr(self.deep_ftr_model.scoring_model, field, tf.identity(field_tensor, name=field))
 
         self.scores = self.compute_total_scores()  # score(wide&deep) + score(wide_sp)
-        if self._mode == tf.estimator.ModeKeys.PREDICT:
-            self.scores = tf.transpose(self.scores, name='final_scores')  # final_scores is transposed
+        if self._mode == tf.estimator.ModeKeys.PREDICT and hparams.num_classes <= 1:
+            # final_scores is transposed for ranking tasks
+            self.scores = tf.transpose(self.scores, name='final_scores')
 
     def get_data_size(self):
-        """get batch size, max group size"""
+        """Infers batch size, max group size"""
         if self._wide_ftrs is not None:
-            data_shape = tf.shape(self._wide_ftrs)
+            data = self._wide_ftrs
         elif self._wide_ftrs_sp_idx is not None:
-            data_shape = tf.shape(self._wide_ftrs_sp_idx)
+            data = self._wide_ftrs_sp_idx
         elif self._doc_fields is not None:
-            data_shape = tf.shape(self._doc_fields[0])
-        elif self._query is not None:
-            data_shape = tf.shape(self._query)
-            return data_shape[0], None
+            data = self._doc_fields[0]
+        elif self._doc_id_fields is not None:
+            data = self._doc_id_fields[0]
+        elif self._usr_fields is not None:
+            data = self._usr_fields
+        elif self._usr_id_fields:
+            data = self._usr_id_fields
         else:
             raise ValueError('Cannot infer data size.')
-        batch_size = data_shape[0]
-        max_group_size = data_shape[1]
-        return batch_size, max_group_size
+        data_shape = tf.shape(data)
+        return data_shape[0], data_shape[1]
 
     def compute_total_scores(self):
         """Computes total scores """
@@ -113,8 +119,10 @@ class DeepMatch:
         num_sim_ftrs = hparams.num_doc_fields
         if hparams.use_deep:
             num_sim_ftrs, sim_ftrs = self.deep_ftr_model.num_sim_ftrs, self.deep_ftr_model.sim_ftrs
+            # Assign a name to sim_ftrs in the graph
+            sim_ftrs = tf.identity(sim_ftrs, name="sim_ftrs")
 
-        if hparams.get('ftr_mean') is not None:
+        if hparams.get('ftr_mean') is not None and self._wide_ftrs is not None:
             print("--- use feature normalization ---")
             ftr_mean = tf.constant(hparams.ftr_mean, dtype=tf.float32)
             ftr_std = tf.constant(hparams.ftr_std, dtype=tf.float32)
@@ -122,10 +130,10 @@ class DeepMatch:
 
         # elementwise rescaling for dense features
         if hparams.elem_rescale and self._wide_ftrs is not None:
-            self.elem_norm_w = tf.compat.v1.get_variable("wide_ftr_norm_w", [hparams.num_wide], dtype=tf.float32,
-                                                         initializer=tf.constant_initializer(1.0))
-            self.elem_norm_b = tf.compat.v1.get_variable("wide_ftr_norm_b", [hparams.num_wide], dtype=tf.float32,
-                                                         initializer=tf.constant_initializer(0.0))
+            self.elem_norm_w = tf.get_variable("wide_ftr_norm_w", [hparams.num_wide], dtype=tf.float32,
+                                               initializer=tf.constant_initializer(1.0))
+            self.elem_norm_b = tf.get_variable("wide_ftr_norm_b", [hparams.num_wide], dtype=tf.float32,
+                                               initializer=tf.constant_initializer(0.0))
             self._wide_ftrs = tf.tanh(self._wide_ftrs * self.elem_norm_w + self.elem_norm_b)
 
         emb_size = 0
@@ -149,6 +157,7 @@ class DeepMatch:
 
         # reshape
         final_ftrs = tf.concat(final_ftrs, axis=-1)
+
         self.final_ftrs = tf.reshape(final_ftrs, shape=[batch_size, max_group_size, emb_size])
 
         # hidden layer
@@ -162,15 +171,19 @@ class DeepMatch:
                 use_bias=True,
                 activation=tf.tanh,
                 name="hidden_projection_" + str(i))
+
         # final score for query/doc pairs
         scores = tf.layers.dense(
             hidden_ftrs,
-            units=1,
+            units=hparams.num_classes,
             use_bias=True,
             activation=None,
             name="scoring")
-        scores = tf.squeeze(scores, axis=-1)
-        return scores  # shape=[batch_size, max_group_size]
+        if hparams.num_classes <= 1:
+            scores = tf.squeeze(scores, axis=-1)  # shape=[batch_size, max_group_size]
+        else:
+            scores = tf.squeeze(scores, axis=-2)  # shape=[batch_size, num_classes]
+        return scores
 
     def add_empty_str_ftr(self, max_group_size):
         """
