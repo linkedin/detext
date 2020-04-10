@@ -1,3 +1,5 @@
+![Python application](https://github.com/linkedin/detext/workflows/Python%20application/badge.svg)
+
 DeText: A Deep Neural Ranking Framework with Text Understanding
 ========
 
