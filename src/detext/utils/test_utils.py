@@ -5,6 +5,7 @@ import argparse
 import math
 import numpy as np
 
+
 def neg_log_sigmoid(x):
     """Negative log sigmoid"""
     return -math.log(1 / (1 + math.exp(-x)))

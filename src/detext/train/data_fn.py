@@ -5,7 +5,6 @@ Data processing.  Two important functions:
 """
 
 import tensorflow as tf
-import json
 import tensorflow_ranking as tfr
 from functools import partial
 

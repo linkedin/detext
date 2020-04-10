@@ -228,10 +228,8 @@ class TestDeepMatch(tf.test.TestCase):
                 wide_ftrs = wide_ftrs.eval()
 
                 # final_ftrs should contain information about wide_ftrs user_fields and doc_fields
-                self.assertAllEqual(dm.final_ftrs.eval().shape[-1],
-                                    (len(doc_fields) + len(usr_fields) + 1) *
-                                    (dm.deep_ftr_model.ftr_size + int(hparams.explicit_empty)) +
-                                    wide_ftrs.shape[-1])
+                self.assertAllEqual(dm.final_ftrs.eval().shape[-1], (len(doc_fields) + len(usr_fields) + 1) * (
+                    dm.deep_ftr_model.ftr_size + int(hparams.explicit_empty)) + wide_ftrs.shape[-1])
 
     def testDeepMatchWithIdField(self):
         """Tests DeepMatch with id fields"""
