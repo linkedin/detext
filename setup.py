@@ -9,7 +9,7 @@ setuptools.setup(
     include_package_data=True,
     install_requires=[
         'numpy<1.17',
-        'tensorflow==1.14.0',
+        'tensorflow==1.15.2',
         'tensorflow_ranking==0.1.4',
         'gast==0.2.2'
     ],
