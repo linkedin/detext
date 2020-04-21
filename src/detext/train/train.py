@@ -21,12 +21,14 @@ def train(hparams):
     :return:
     """
     eval_log_file = None
-    if hparams.use_horovod:
+    if hparams.use_horovod is True:
         import horovod.tensorflow as hvd
         eval_log_file = path_join(hparams.out_dir, 'eval_log.txt')
+    train_strategy = tf.contrib.distribute.ParameterServerStrategy()
+    estimator = get_estimator(hparams, strategy=train_strategy)
 
     # Set model export config for evaluator or primary worker of horovod
-    if not hparams.use_horovod or (hparams.use_horovod and hvd.rank() == 0):
+    if hparams.use_horovod is False or (hparams.use_horovod is True and hvd.rank() == 0):
         best_model_name = 'best_' + hparams.pmetric
         # Exporter to save best (in terms of pmetric) checkpoint in the folder [best_model_name],
         # and export to savedmodel for prediction.
@@ -40,25 +42,8 @@ def train(hparams):
             sort_reverse=True,
             eval_log_file=eval_log_file)
 
-    # Handle single gpu or async distributed training case
+        # Handle single gpu or async distributed training case
     if not hparams.use_horovod:
-        config = tf.estimator.RunConfig(
-            save_summary_steps=hparams.steps_per_stats,
-            save_checkpoints_steps=hparams.steps_per_eval,
-            log_step_count_steps=hparams.steps_per_stats,
-            keep_checkpoint_max=hparams.keep_checkpoint_max,
-            train_distribute=tf.contrib.distribute.ParameterServerStrategy()
-            )
-        # TO DO:
-        # In the future we will support both sync training and async training on mlearn.
-        # Now the sync training can run on kubernetes cluster using hvd lib.
-        # 1. async training.
-        # train_distribute=tf.contrib.distribute.ParameterServerStrategy()  #async strategy.
-        # 2. sync strategy
-        # train_distribute=tf.distribute.experimental.MultiWorkerMirroredStrategy() #sync strategy,
-        # and remember to remove ps in tony params when use sync strategy,
-        # Also note that MultiWorkerMirroredStrategy doesn't support bert-adam optimizer, but can use adam optimizer
-
         # Create TrainSpec for model training
         train_spec = tf.estimator.TrainSpec(
             input_fn=lambda: input_fn(input_pattern=hparams.train_file,
@@ -100,9 +85,6 @@ def train(hparams):
             throttle_secs=10,
             start_delay_secs=10)
 
-        # Build the estimator
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=hparams.out_dir, params=hparams, config=config)
-
         # Training and evaluation with dev set
         tf.estimator.train_and_evaluate(
             estimator=estimator,
@@ -110,23 +92,9 @@ def train(hparams):
             eval_spec=eval_spec
         )
 
-    # Handle sync distributed training case via use_horovod
+        # Handle sync distributed training case via use_horovod
     else:
-        # Adjust config for horovod
-        session_config = tf.ConfigProto()
-        session_config.allow_soft_placement = True
-        # Pin each worker to a GPU
-        session_config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-        config = tf.estimator.RunConfig(
-            save_summary_steps=hparams.steps_per_stats,
-            save_checkpoints_steps=hparams.steps_per_eval,
-            log_step_count_steps=hparams.steps_per_stats,
-            keep_checkpoint_max=hparams.keep_checkpoint_max,
-            session_config=session_config)
-
-        model_dir = hparams.out_dir if hvd.rank() == 0 else None
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
+        import horovod.tensorflow as hvd
 
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states from
         # rank 0 to all other processes. This is necessary to ensure consistent
@@ -146,7 +114,7 @@ def train(hparams):
             ckpt = tf.train.get_checkpoint_state(hparams.out_dir)
             current_step = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[-1])
 
-        # There is dataset issue with wrapping train and evaluate in a for loop, in every iteration the data_fn
+            # There is dataset issue with wrapping train and evaluate in a for loop, in every iteration the data_fn
         # will construct a new dataset object and call make_initializable_iterator to create an iterator from
         # the beginning of the dataset. In other words, there is no guarentee all data will be iterated.
         # To alleviate this issue, recommend to:
@@ -203,13 +171,12 @@ def train(hparams):
                     eval_result=eval_result,
                     is_the_final_export=False)
 
-    # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
+                # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
     task_type = executor_utils.get_executor_task_type()
     do_evaluate = task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE
     if (not hparams.use_horovod and do_evaluate) or (hparams.use_horovod and hvd.rank() == 0):
         best_checkpoint_dir = path_join(hparams.out_dir, best_model_name)
-        estimator_savedmodel = tf.estimator.Estimator(model_fn=model_fn, model_dir=best_checkpoint_dir,
-                                                      params=hparams, config=config)
+        estimator_savedmodel = get_estimator(hparams, strategy=train_strategy, best_checkpoint=best_checkpoint_dir)
         result = estimator_savedmodel.evaluate(
             input_fn=lambda: input_fn(input_pattern=hparams.test_file,
                                       metadata_path=hparams.metadata_path,
@@ -230,6 +197,52 @@ def train(hparams):
         print("\n\n***** Eval results of best model on test data: *****")
         for key in sorted(result.keys()):
             print("%s = %s" % (key, str(result[key])))
+
+
+def get_estimator(hparams, strategy, best_checkpoint=None):
+    # Handle single gpu or async distributed training case
+    if hparams.use_horovod is False:
+        config = tf.estimator.RunConfig(
+            save_summary_steps=hparams.steps_per_stats,
+            save_checkpoints_steps=hparams.steps_per_eval,
+            log_step_count_steps=hparams.steps_per_stats,
+            keep_checkpoint_max=hparams.keep_checkpoint_max,
+            train_distribute=strategy
+        )
+        # TO DO:
+        # In the future we will support both sync training and async training on mlearn.
+        # Now the sync training can run on kubernetes cluster using hvd lib.
+        # 1. async training.
+        # train_distribute=tf.contrib.distribute.ParameterServerStrategy()  #async strategy.
+        # 2. sync strategy
+        # train_distribute=tf.distribute.experimental.MultiWorkerMirroredStrategy() #sync strategy,
+        # and remember to remove ps in tony params when use sync strategy,
+        # Also note that MultiWorkerMirroredStrategy doesn't support bert-adam optimizer, but can use adam optimizer
+
+        # Build the estimator
+        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir
+        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
+
+        # Handle sync distributed training case via use_horovod
+    else:
+        import horovod.tensorflow as hvd
+        # Adjust config for horovod
+        session_config = tf.ConfigProto()
+        session_config.allow_soft_placement = True
+        # Pin each worker to a GPU
+        session_config.gpu_options.visible_device_list = str(hvd.local_rank())
+
+        config = tf.estimator.RunConfig(
+            save_summary_steps=hparams.steps_per_stats,
+            save_checkpoints_steps=hparams.steps_per_eval,
+            log_step_count_steps=hparams.steps_per_stats,
+            keep_checkpoint_max=hparams.keep_checkpoint_max,
+            session_config=session_config)
+
+        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir if hvd.rank() == 0 else None
+        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
+
+    return estimator
 
 
 def serving_input_fn(hparams):
@@ -257,11 +270,17 @@ def serving_input_fn(hparams):
         "wide_ftr_sp_idx_placeholder", [None, None], tf.int32, 'wide_ftrs_sp_idx', hparams.feature_names)
     wide_ftr_sp_val_placeholder, wide_ftrs_sp_val = train_helper.create_placeholder_for_ftrs(
         "wide_ftr_sp_val_placeholder", [None, None], tf.float32, 'wide_ftrs_sp_val', hparams.feature_names)
-
+    uid_placeholder, uid = train_helper.create_placeholder_for_ftrs(
+        "uid_placeholder", [], tf.int64, 'uid', hparams.feature_names, tf.constant([-1], dtype=tf.int64))
+    weight_placeholder, weight = train_helper.create_placeholder_for_ftrs(
+        "weight_placeholder", [], tf.float32, 'weight', hparams.feature_names, tf.constant([1.0], dtype=tf.float32))
+    label_placeholder, label = train_helper.create_placeholder_for_ftrs(
+        "label_placeholder", [None], tf.float32, 'label', hparams.feature_names)
     # Placeholder tensors
-    feature_placeholders = {}
+    # Default uid as feature for detext integration, will be -1 by default if not present in data
+    feature_placeholders = {'uid': uid_placeholder, 'weight': weight_placeholder, 'label': label_placeholder}
     # Features to feed into model (creating model_fn)
-    features = {}
+    features = {'uid': uid, 'weight': weight, 'label': label}
     # Add objects into pleaceholders and features
     for fname in hparams.feature_names:
         if fname == 'query':
@@ -316,6 +335,8 @@ def model_fn(features, labels, mode, params):
     """
     query_field = features.get('query', None)
 
+    uid = features.get('uid', None)
+
     weight = features.get('weight', None)
     wide_ftrs = features.get('wide_ftrs', None)
 
@@ -339,6 +360,7 @@ def model_fn(features, labels, mode, params):
         usr_id_fields = None
 
     label_field = labels['label'] if mode != tf.estimator.ModeKeys.PREDICT else None
+    labels_passthrough = features['label']
 
     group_size_field = features['group_size'] if mode != tf.estimator.ModeKeys.PREDICT else None
 
@@ -405,7 +427,10 @@ def model_fn(features, labels, mode, params):
     elif mode == tf.estimator.ModeKeys.PREDICT:
         # Prediction field for scoring models
         predictions = {
-            'scores': model.scores
+            'uid': uid,
+            'scores': model.original_scores,
+            'weight': weight,
+            'label': labels_passthrough
         }
         # multiclass classification: export the probabilities across classes by applying softmax
         if params.num_classes > 1:
@@ -443,7 +468,7 @@ def compute_rank_clf_loss(hparams, scores, labels, group_size, weight):
         labels = tf.squeeze(labels, -1)  # Last dimension is max_group_size, which should be 1
         return tf.losses.sparse_softmax_cross_entropy(logits=scores, labels=labels, weights=weight)
 
-    # Expand weight to [batch size, 1] so that in inhouse ranking loss it can be multiplied with loss which is
+        # Expand weight to [batch size, 1] so that in inhouse ranking loss it can be multiplied with loss which is
     #   [batch_size, max_group_size]
     expanded_weight = tf.expand_dims(weight, axis=-1)
 
@@ -456,7 +481,7 @@ def compute_rank_clf_loss(hparams, scores, labels, group_size, weight):
         loss = loss_fn(labels, scores, {weight_name: expanded_weight})
         return loss
 
-    # our own implementation
+        # our own implementation
     if hparams.ltr_loss_fn == 'pairwise':
         lambdarank = LambdaRank()
         pairwise_loss, pairwise_mask = lambdarank(scores, labels, group_size)
