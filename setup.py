@@ -3,7 +3,7 @@
 import setuptools
 setuptools.setup(
     name='detext',
-    version='1.0.1',
+    version='1.0.7',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
