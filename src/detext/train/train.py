@@ -7,17 +7,17 @@ from detext.model.deep_match import DeepMatch
 from detext.model.lambdarank import LambdaRank
 from detext.train import metrics
 from detext.train import optimization, train_helper
-from detext.train.data_fn import input_fn
 from detext.train.loss import compute_softmax_loss, compute_sigmoid_cross_entropy_loss, \
     compute_regularization_penalty
 from detext.utils import vocab_utils, executor_utils
 from detext.utils.best_checkpoint_copier import BestCheckpointCopier
 
 
-def train(hparams):
+def train(hparams, input_fn):
     """
     Main function for train/evaluate DeText ranking model
     :param hparams: hparams
+    :param input_fn: input function to create train/eval specs
     :return:
     """
     eval_log_file = None

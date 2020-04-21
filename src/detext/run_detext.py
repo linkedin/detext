@@ -12,6 +12,7 @@ import tensorflow as tf
 import tensorflow_ranking as tfr
 
 from detext.train import train
+from detext.train.data_fn import input_fn
 from detext.utils import misc_utils, logger, executor_utils
 
 
@@ -302,7 +303,7 @@ def main(argv):
     logging.info("***********DeText Training***********")
 
     # Train and evaluate DeText model
-    train.train(hparams)
+    train.train(hparams, input_fn)
 
 
 if __name__ == '__main__':
