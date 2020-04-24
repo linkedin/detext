@@ -19,8 +19,7 @@ class TestData(tf.test.TestCase):
         vocab_table = vocab_utils.read_tf_vocab(res_dir + '/vocab.txt', '[UNK]')
 
         # dataset dir
-        data_dir = os.path.join(res_dir, 'train', 'dataset')
-        input_files = os.path.join(data_dir, '*.tfrecord')
+        data_dir = os.path.join(res_dir, 'train', 'dataset', 'tfrecord')
 
         # create a dataset.
         # Read schema
@@ -30,7 +29,7 @@ class TestData(tf.test.TestCase):
             'docId_completedQuery', 'wide_ftrs', 'weight')
 
         batch_size = 2
-        dataset = data_fn.input_fn(input_pattern=input_files,
+        dataset = data_fn.input_fn(input_pattern=data_dir,
                                    metadata_path=None,
                                    batch_size=batch_size,
                                    mode=tf.estimator.ModeKeys.EVAL,

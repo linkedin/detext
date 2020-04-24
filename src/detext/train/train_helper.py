@@ -6,10 +6,10 @@ from detext.train import data_fn
 from detext.utils import vocab_utils
 
 
-def create_placeholder_for_ftrs(ph_name, shape, dtype, ftr_name, ftr_names):
+def create_placeholder_for_ftrs(ph_name, shape, dtype, ftr_name, ftr_names, default=None):
     """Creates placeholder and specifies batch_size=1"""
     ph = tf.placeholder(shape=shape, dtype=dtype, name=ph_name)
-    ph_one_batch = tf.expand_dims(ph, axis=0) if ftr_name in ftr_names else None
+    ph_one_batch = tf.expand_dims(ph, axis=0) if ftr_name in ftr_names else default
     return ph, ph_one_batch
 
 

@@ -66,6 +66,7 @@ class DeepMatch:
             )
 
         self.scores = self.compute_total_scores()  # score(wide&deep) + score(wide_sp)
+        self.original_scores = self.scores
         if self._mode == tf.estimator.ModeKeys.PREDICT and hparams.num_classes <= 1:
             # final_scores is transposed for ranking tasks
             self.scores = tf.transpose(self.scores, name='final_scores')

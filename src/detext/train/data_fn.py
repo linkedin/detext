@@ -4,6 +4,7 @@ Data processing.  Two important functions:
 2. serving_input_receiver_fn(), used by model serving.
 """
 
+import os
 import tensorflow as tf
 import tensorflow_ranking as tfr
 from functools import partial
@@ -45,6 +46,9 @@ def _get_padded_shapes_and_values(feature_names, PAD, vocab_table, PAD_FOR_ID_FT
         elif name == 'weight':
             padded_shapes[name] = tf.TensorShape([])
             padded_values[name] = 0.0
+        elif name == 'uid':
+            padded_shapes[name] = tf.TensorShape([])
+            padded_values[name] = tf.cast(0, tf.int64)
         elif name == 'wide_ftrs':
             padded_shapes[name] = tf.TensorShape([None, None])
             padded_values[name] = 0.0
@@ -54,6 +58,9 @@ def _get_padded_shapes_and_values(feature_names, PAD, vocab_table, PAD_FOR_ID_FT
         elif name == 'wide_ftrs_sp_idx':
             padded_shapes[name] = tf.TensorShape([None, None])
             padded_values[name] = 0
+        elif name == 'label':
+            padded_shapes[name] = tf.TensorShape([None])
+            padded_values[name] = _LABEL_PADDING
         else:
             raise KeyError('Feature name ({}) not supported'.format(name))
 
@@ -73,6 +80,9 @@ def _get_tfrecord_feature_parsing_schema(feature_names):
             features_tfr[name] = tf.FixedLenFeature(shape=[1], dtype=tf.string)
         elif name == 'weight':
             features_tfr[name] = tf.FixedLenFeature(shape=[1], dtype=tf.float32)
+            # Default uid as feature for detext integration, will be -1 by default if not present in data
+        elif name == 'uid':
+            features_tfr[name] = tf.FixedLenFeature(shape=[1], dtype=tf.int64)
         elif name.startswith('doc_') or name.startswith('docId_'):
             features_tfr[name] = tf.VarLenFeature(dtype=tf.string)
         elif name in ('wide_ftrs', 'label', 'wide_ftrs_sp_val'):
@@ -245,7 +255,7 @@ def input_fn_tfrecord(input_pattern,
     """
     output_buffer_size = 1000
 
-    input_files = get_input_files(input_pattern)
+    input_files = get_input_files(os.path.join(input_pattern, '*'))
     feature_names = list(feature_names)
     if len(input_files) > 1:  # Multiple input files
         # Preprocess files concurrently, and interleave blocks of block_length records from each file
@@ -274,8 +284,8 @@ def input_fn_tfrecord(input_pattern,
         features = dict()
         for name in feature_names:
             t = example[name]
-
-            t = _cast_to_dtype_of_smaller_size(t)
+            if name != 'uid':
+                t = _cast_to_dtype_of_smaller_size(t)
             t = _convert_ftrs_to_dense_tensor(t, name)
 
             # for text data, call process_text()
@@ -285,7 +295,7 @@ def input_fn_tfrecord(input_pattern,
             if name.startswith('usrId_') or name.startswith('docId_'):
                 t = process_id(t, vocab_table_for_id_ftr, PAD_FOR_ID_FTR)
 
-            if name == 'query' or name.startswith('usr_') or name.startswith('usrId_') or name == 'weight':
+            if name == 'query' or name.startswith('usr_') or name.startswith('usrId_') or name == 'weight' or name == 'uid':
                 t = tf.squeeze(t, axis=0)
 
             features[name] = t
@@ -295,8 +305,10 @@ def input_fn_tfrecord(input_pattern,
         features['group_size'] = num_docs
         features = _reshape_ftrs_to_group_wise(features, feature_names, num_docs)
         features.setdefault('weight', tf.constant(1.0, dtype=tf.float32))
+        # Default uid as feature for detext integration, will be -1 by default if not present in data
+        features.setdefault('uid', tf.constant(-1, dtype=tf.int64))
 
-        label = {'label': tf.to_float(features.pop('label'))}
+        label = {'label': tf.to_float(features['label'])}
         return features, label
 
     features_schema = _get_tfrecord_feature_parsing_schema(feature_names)
@@ -304,10 +316,10 @@ def input_fn_tfrecord(input_pattern,
     dataset = dataset.map(partial(process_data, features_schema=features_schema),
                           num_parallel_calls=num_data_process_threads)
 
-    feature_names.remove('label')
-
     if 'weight' not in feature_names:
         feature_names.append('weight')
+    if 'uid' not in feature_names:
+        feature_names.append('uid')
     padded_shapes, padded_values = _get_padded_shapes_and_values(feature_names, PAD, vocab_table,
                                                                  PAD_FOR_ID_FTR, vocab_table_for_id_ftr)
 
