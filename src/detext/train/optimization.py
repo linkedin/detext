@@ -100,6 +100,10 @@ def create_optimizer(hparams, loss):
                 beta_2=0.999,
                 epsilon=1e-6,
                 exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
+            if hparams.use_horovod:
+                # Treat the bert optimizer the same as the original optimizer: wrapped with horovod
+                optimizer_bert = hvd.DistributedOptimizer(optimizer_bert, sparse_as_dense=True)
+
             bert_grad, bert_tvars = [], []
             other_grad, other_tvars = [], []
             for grad, tvar in zip(grads, tvars):

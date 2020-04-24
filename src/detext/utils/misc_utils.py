@@ -326,6 +326,8 @@ def get_input_files(input_patterns):
     """
     input_files = []
     for input_pattern in input_patterns.split(","):
+        if tf.io.gfile.isdir(input_pattern):
+            input_pattern = os.path.join(input_pattern, '*')
         input_files.extend(tf.gfile.Glob(input_pattern))
     print("*** Input Files *** {} {}".format(input_patterns, len(input_files)))
     return input_files
@@ -361,7 +363,7 @@ def estimate_train_steps(input_pattern, num_epochs, batch_size, isTfrecord):
     if not isTfrecord:
         raise ValueError("--num_epochs doesn't support avro yet.")
     else:
-        input_files = tf.gfile.Glob(input_pattern)
+        input_files = get_input_files(input_pattern)
 
         file_1st = input_files[0]
         file_1st_num_examples = sum(1 for _ in tf.python_io.tf_record_iterator(file_1st))
