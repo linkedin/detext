@@ -255,7 +255,7 @@ def input_fn_tfrecord(input_pattern,
     """
     output_buffer_size = 1000
 
-    input_files = get_input_files(os.path.join(input_pattern, '*'))
+    input_files = get_input_files(input_pattern)
     feature_names = list(feature_names)
     if len(input_files) > 1:  # Multiple input files
         # Preprocess files concurrently, and interleave blocks of block_length records from each file
