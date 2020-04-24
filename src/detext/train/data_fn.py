@@ -4,7 +4,6 @@ Data processing.  Two important functions:
 2. serving_input_receiver_fn(), used by model serving.
 """
 
-import os
 import tensorflow as tf
 import tensorflow_ranking as tfr
 from functools import partial
