@@ -35,3 +35,7 @@ TEST-*.xml
 __pycache__/
 /*/build
 .DS_Store
+
+gradle/
+gradlew
+gradlew.bat
