@@ -1,6 +1,5 @@
 import tensorflow as tf
 import tensorflow_ranking as tfr
-import os
 from os.path import join as path_join
 
 from detext.model.deep_match import DeepMatch
@@ -28,6 +27,7 @@ def train(hparams):
     estimator = get_estimator(hparams, strategy=train_strategy)
 
     # Set model export config for evaluator or primary worker of horovod
+    exporter_list = None
     if hparams.use_horovod is False or (hparams.use_horovod is True and hvd.rank() == 0):
         best_model_name = 'best_' + hparams.pmetric
         # Exporter to save best (in terms of pmetric) checkpoint in the folder [best_model_name],
@@ -41,59 +41,10 @@ def train(hparams):
             compare_fn=lambda x, y: x.score > y.score,  # larger metric better
             sort_reverse=True,
             eval_log_file=eval_log_file)
+        exporter_list = [best_checkpoint_exporter]
 
-        # Handle single gpu or async distributed training case
-    if not hparams.use_horovod:
-        # Create TrainSpec for model training
-        train_spec = tf.estimator.TrainSpec(
-            input_fn=lambda: input_fn(input_pattern=hparams.train_file,
-                                      metadata_path=hparams.metadata_path,
-                                      batch_size=hparams.train_batch_size,
-                                      mode=tf.estimator.ModeKeys.TRAIN,
-                                      vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                      vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
-                                                                                       hparams.UNK_FOR_ID_FTR),
-                                      feature_names=hparams.feature_names,
-                                      CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                      PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                      max_len=hparams.max_len,
-                                      min_len=hparams.min_len,
-                                      cnn_filter_window_size=max(
-                                          hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
-                                      ),
-            max_steps=hparams.num_train_steps)
-
-        eval_spec = tf.estimator.EvalSpec(
-            input_fn=lambda: input_fn(input_pattern=hparams.dev_file,
-                                      metadata_path=hparams.metadata_path,
-                                      batch_size=hparams.test_batch_size,
-                                      mode=tf.estimator.ModeKeys.EVAL,
-                                      vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                      vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
-                                                                                       hparams.UNK_FOR_ID_FTR),
-                                      feature_names=hparams.feature_names,
-                                      CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                      PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                      max_len=hparams.max_len,
-                                      min_len=hparams.min_len,
-                                      cnn_filter_window_size=max(
-                                          hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
-                                      ),
-            exporters=[best_checkpoint_exporter],
-            steps=None,
-            # Set throttle_secs to 10 instead of 0 to avoid warning to spam logs
-            throttle_secs=10,
-            start_delay_secs=10)
-
-        # Training and evaluation with dev set
-        tf.estimator.train_and_evaluate(
-            estimator=estimator,
-            train_spec=train_spec,
-            eval_spec=eval_spec
-        )
-
-        # Handle sync distributed training case via use_horovod
-    else:
+    # Handle sync distributed training case via use_horovod
+    if hparams.use_horovod:
         import horovod.tensorflow as hvd
 
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states from
@@ -102,76 +53,59 @@ def train(hparams):
         # restored from a checkpoint.
         bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
 
-        # tf.estimator.train_and_evaluate doesn't work with horovod: https://github.com/horovod/horovod/issues/182
-        # One workaround is to pass evaluation listeners to the primary worker's estimator.train() to evaluate when
-        # a new checkpoint is saved, but this won't work for sync distributed training as workers are expected to
-        # train at close speed otherwise there'll be syncup timeout issue. See issue: https://github.com/horovod/horovod/issues/403
-        # For now let all workers to do eval.
+    # Create TrainSpec for model training
+    train_spec = tf.estimator.TrainSpec(
+        input_fn=lambda: input_fn(input_pattern=hparams.train_file,
+                                  metadata_path=hparams.metadata_path,
+                                  batch_size=hparams.train_batch_size,
+                                  mode=tf.estimator.ModeKeys.TRAIN,
+                                  vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
+                                  vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
+                                                                                   hparams.UNK_FOR_ID_FTR),
+                                  feature_names=hparams.feature_names,
+                                  CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
+                                  PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
+                                  max_len=hparams.max_len,
+                                  min_len=hparams.min_len,
+                                  cnn_filter_window_size=max(
+                                      hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0,
+                                  # Add horovod information if applicable
+                                  hvd_info=hparams.hvd_info if hparams.use_horovod else None
+                                  ),
+        hooks=[bcast_hook] if hparams.use_horovod else None,  # Ensure proper initialization with horovod
+        max_steps=hparams.num_train_steps)
 
-        # Extract global step from checkpoint filename
-        current_step = 0
-        if tf.gfile.Exists(path_join(hparams.out_dir, "checkpoint")):
-            ckpt = tf.train.get_checkpoint_state(hparams.out_dir)
-            current_step = int(os.path.basename(ckpt.model_checkpoint_path).split('-')[-1])
+    eval_spec = tf.estimator.EvalSpec(
+        input_fn=lambda: input_fn(input_pattern=hparams.dev_file,
+                                  metadata_path=hparams.metadata_path,
+                                  batch_size=hparams.test_batch_size,
+                                  mode=tf.estimator.ModeKeys.EVAL,
+                                  vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
+                                  vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
+                                                                                   hparams.UNK_FOR_ID_FTR),
+                                  feature_names=hparams.feature_names,
+                                  CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
+                                  PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
+                                  max_len=hparams.max_len,
+                                  min_len=hparams.min_len,
+                                  cnn_filter_window_size=max(
+                                      hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
+                                  ),
+        exporters=exporter_list,
+        steps=None,
+        # Set throttle_secs to 10 min to avoid warning to spam logs
+        # Set throttle to 0 for horovod: https://github.com/horovod/horovod/issues/182#issuecomment-533897757
+        throttle_secs=0 if hparams.use_horovod else 600,
+        start_delay_secs=10)
 
-            # There is dataset issue with wrapping train and evaluate in a for loop, in every iteration the data_fn
-        # will construct a new dataset object and call make_initializable_iterator to create an iterator from
-        # the beginning of the dataset. In other words, there is no guarentee all data will be iterated.
-        # To alleviate this issue, recommend to:
-        # - use larger steps_per_eval
-        # - make each data file smaller (e.g. 128M), to make them same probability to be the first elements of the iterator
-        while current_step < hparams.num_train_steps:
-            steps_per_eval = min(hparams.steps_per_eval, hparams.num_train_steps - current_step)
-            current_step += hparams.steps_per_eval
-            estimator.train(
-                input_fn=lambda: input_fn(input_pattern=hparams.train_file,
-                                          metadata_path=hparams.metadata_path,
-                                          batch_size=hparams.train_batch_size,
-                                          mode=tf.estimator.ModeKeys.TRAIN,
-                                          vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                          vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(
-                                              hparams.vocab_file_for_id_ftr,
-                                              hparams.UNK_FOR_ID_FTR),
-                                          feature_names=hparams.feature_names,
-                                          CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                          PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                          max_len=hparams.max_len,
-                                          min_len=hparams.min_len,
-                                          cnn_filter_window_size=max(
-                                              hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0,
-                                          hvd_info=hparams.hvd_info),
-                steps=steps_per_eval,
-                hooks=[bcast_hook])
-            # Evaluate every hparams.steps_per_eval steps
-            eval_result = estimator.evaluate(
-                input_fn=lambda: input_fn(input_pattern=hparams.dev_file,
-                                          metadata_path=hparams.metadata_path,
-                                          batch_size=hparams.test_batch_size,
-                                          mode=tf.estimator.ModeKeys.EVAL,
-                                          vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                          vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(
-                                              hparams.vocab_file_for_id_ftr,
-                                              hparams.UNK_FOR_ID_FTR),
-                                          feature_names=hparams.feature_names,
-                                          CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                          PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                          max_len=hparams.max_len,
-                                          min_len=hparams.min_len,
-                                          cnn_filter_window_size=max(
-                                              hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0)
-            )
-            tf.logging.info("Eval On Dev Set: {}".format(eval_result))
-            if hvd.rank() == 0:
-                best_checkpoint_exporter.export(
-                    estimator=estimator,
-                    export_path=path_join(
-                        tf.compat.as_str_any(estimator.model_dir),
-                        tf.compat.as_str_any("export/{}".format(best_checkpoint_exporter.name))),
-                    checkpoint_path=estimator.latest_checkpoint(),
-                    eval_result=eval_result,
-                    is_the_final_export=False)
+    # Training and evaluation with dev set
+    tf.estimator.train_and_evaluate(
+        estimator=estimator,
+        train_spec=train_spec,
+        eval_spec=eval_spec
+    )
 
-                # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
+    # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
     task_type = executor_utils.get_executor_task_type()
     do_evaluate = task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE
     if (not hparams.use_horovod and do_evaluate) or (hparams.use_horovod and hvd.rank() == 0):
@@ -468,7 +402,7 @@ def compute_rank_clf_loss(hparams, scores, labels, group_size, weight):
         labels = tf.squeeze(labels, -1)  # Last dimension is max_group_size, which should be 1
         return tf.losses.sparse_softmax_cross_entropy(logits=scores, labels=labels, weights=weight)
 
-        # Expand weight to [batch size, 1] so that in inhouse ranking loss it can be multiplied with loss which is
+    # Expand weight to [batch size, 1] so that in inhouse ranking loss it can be multiplied with loss which is
     #   [batch_size, max_group_size]
     expanded_weight = tf.expand_dims(weight, axis=-1)
 
@@ -481,7 +415,7 @@ def compute_rank_clf_loss(hparams, scores, labels, group_size, weight):
         loss = loss_fn(labels, scores, {weight_name: expanded_weight})
         return loss
 
-        # our own implementation
+    # our own implementation
     if hparams.ltr_loss_fn == 'pairwise':
         lambdarank = LambdaRank()
         pairwise_loss, pairwise_mask = lambdarank(scores, labels, group_size)
