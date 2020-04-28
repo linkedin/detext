@@ -249,7 +249,7 @@ def serving_input_fn(hparams):
         elif fname == 'wide_ftrs_sp_idx':
             feature_placeholders[fname] = wide_ftr_sp_idx_placeholder
             features[fname] = wide_ftrs_sp_idx
-        elif fname == 'label' or fname == 'weight':
+        elif fname == 'label' or fname == 'weight' or fname == 'uid':
             continue
         else:
             raise ValueError("Unsupported feature_to_add argument: %s" % fname)
