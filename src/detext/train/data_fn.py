@@ -271,6 +271,33 @@ def input_fn_tfrecord(input_pattern,
     else:
         dataset = tf.data.TFRecordDataset(input_files[0])
 
+    dataset = tfrecord_transform_fn(dataset,
+                                    batch_size,
+                                    mode,
+                                    vocab_table, vocab_table_for_id_ftr,
+                                    feature_names,
+                                    CLS, SEP, PAD, PAD_FOR_ID_FTR,
+                                    output_buffer_size,
+                                    max_len,
+                                    min_len,
+                                    cnn_filter_window_size,
+                                    prefetch_size,
+                                    num_data_process_threads)
+    return dataset
+
+
+def tfrecord_transform_fn(dataset,
+                          batch_size,
+                          mode,
+                          vocab_table, vocab_table_for_id_ftr,
+                          feature_names,
+                          CLS, SEP, PAD, PAD_FOR_ID_FTR,
+                          output_buffer_size,
+                          max_len=None,
+                          min_len=None,
+                          cnn_filter_window_size=0,
+                          prefetch_size=100,
+                          num_data_process_threads=32):
     if mode == tf.estimator.ModeKeys.TRAIN:
         dataset = dataset.shuffle(output_buffer_size)
         dataset = dataset.repeat()
