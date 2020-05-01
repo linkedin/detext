@@ -8,10 +8,10 @@ DeText: A Deep Neural Ranking Framework with Text Understanding
 **Relax like a sloth, let DeText do the understanding for you**
 
 ## What is it
-**DeText** is a **De**ep neural ranking framework with **Text** understanding.  is a ranking framework that leverages semantic matching using deep neural networks to 
+**DeText** is a **De**ep **Text** understanding framework for NLP related ranking, classification, and language generation tasks.  It leverages semantic matching using deep neural networks to 
 understand member intents in search and recommender systems. 
-As a general ranking framework, currently DeText can be applied to many tasks, 
-including search & recommendation ranking and query understanding tasks.
+As a general NLP framework, currently DeText can be applied to many tasks, 
+including search & recommendation ranking, multi-class classification and query understanding tasks.
 
 ## Highlight
 Design principles for DeText framework:
@@ -19,7 +19,7 @@ Design principles for DeText framework:
   * Automatic feature extraction with deep models
   * End-to-end training
   * Interaction modeling between ranking sources and targets
-* A general framework with great flexibility to meet requirement of different ranking productions.
+* A general framework with great flexibility to meet requirement of different production applications.
   * Flexible deep model types
   * Multiple loss function choices
   * User defined source/target fields
@@ -49,7 +49,7 @@ It is an end-to-end model where all the parameters are jointly updated to optimi
 ## Model Flexibility
 DeText is a general ranking framework that offers great flexibility for clients to build customized networks for their own use cases:
 
-**LTR layer**: in-house LTR loss implementation, or tf-ranking LTR loss.
+**LTR/classification layer**: in-house LTR loss implementation, or tf-ranking LTR loss, multi-class classification support.
 
 **MLP layer**: customizable number of layers and number of dimensions.
 
