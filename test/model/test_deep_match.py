@@ -89,7 +89,9 @@ class TestDeepMatch(tf.test.TestCase):
         vocab_size_for_id_ftr=30,
         we_trainable_for_id_ftr=True,
         we_file_for_id_ftr=None,
-        pad_id_for_id_ftr=0
+        pad_id_for_id_ftr=0,
+        use_doc_projection=False,
+        use_usr_projection=False
     )
 
     def _get_constant_usr_fields(self):
@@ -349,6 +351,34 @@ class TestDeepMatch(tf.test.TestCase):
             )
         # Check sizes and shapes
         self.assertAllEqual(scores.shape, [2, hparamscp.num_classes])
+
+    def testDeepMatcDocUsrProjection(self):
+        """Tests DeepMatch with doc/usr fields projection."""
+        hparams = copy.copy(self.hparams)
+        # ftr_ext = cnn
+        with tf.Graph().as_default():
+            query = tf.constant(self.query, dtype=tf.int32)
+            doc_fields = self._get_constant_doc_fields()
+            usr_fields = self._get_constant_usr_fields()
+            wide_ftrs = tf.constant(self.wide_ftrs, dtype=tf.float32)
+            setattr(hparams, 'use_doc_projection', True)
+            setattr(hparams, 'use_usr_projection', True)
+            setattr(hparams, 'num_usr_fields', len(usr_fields))
+            setattr(hparams, 'explicit_empty', False)
+            # num_sim_ftrs should be doc projection size* (query + user projection size)
+            expected_num_sim_ftrs = 1 * (1 + 1)
+            # Test no query field when ftr_ext = bert
+            dm = deep_match.DeepMatch(query,
+                                      wide_ftrs,
+                                      doc_fields,
+                                      hparams,
+                                      tf.estimator.ModeKeys.EVAL,
+                                      usr_fields=usr_fields)
+
+            self.assertAllEqual(dm.deep_ftr_model.num_sim_ftrs, expected_num_sim_ftrs)
+            with tf.Session() as sess:
+                sess.run(tf.global_variables_initializer())
+                self.assertAllEqual(dm.deep_ftr_model.sim_ftrs.eval().shape, self.group_size + [expected_num_sim_ftrs])
 
 
 if __name__ == "__main__":

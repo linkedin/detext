@@ -30,6 +30,10 @@ def add_arguments(parser):
     parser.add_argument("--use_deep", type=str2bool, default=True, help="Whether to use deep features.")
     parser.add_argument("--elem_rescale", type=str2bool, default=True,
                         help="Whether to perform elementwise rescaling.")
+    parser.add_argument("--use_doc_projection", type=str2bool, default=False,
+                        help="whether to project multiple doc features to 1 vector.")
+    parser.add_argument("--use_usr_projection", type=str2bool, default=False,
+                        help="whether to project multiple usr features to 1 vector.")
 
     # Ranking specific
     parser.add_argument("--ltr_loss_fn", type=str, default='pairwise', help="learning-to-rank method.")
@@ -167,6 +171,8 @@ def create_hparams(flags):
         use_deep=flags.use_deep,
         elem_rescale=flags.elem_rescale,
         emb_sim_func=flags.emb_sim_func,
+        use_doc_projection=flags.use_doc_projection,
+        use_usr_projection=flags.use_usr_projection,
         num_classes=flags.num_classes,
         optimizer=flags.optimizer,
         max_gradient_norm=flags.max_gradient_norm,
