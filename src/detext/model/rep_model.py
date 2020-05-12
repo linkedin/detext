@@ -157,7 +157,7 @@ class RepModel(object):
                                        ftr_size,
                                        use_bias=True,
                                        activation=tf.tanh,
-                                       name="doc_ftrs_projection_layer")  # [batch_size, max_group_size, ftr_size]
+                                       name="doc_ftrs_projection_layer")  # [batch_size, max_group_size, 1, ftr_size]
             doc_ftrs = tf.identity(doc_ftrs, name='doc_ftrs_projection')
             num_doc_fields = 1
 
@@ -172,7 +172,7 @@ class RepModel(object):
                                            ftr_size,
                                            use_bias=True,
                                            activation=tf.tanh,
-                                           name="usr_ftrs_projection_layer")  # [batch_size, max_group_size, ftr_size]
+                                           name="usr_ftrs_projection_layer")  # [batch_size, 1, ftr_size]
                 usr_ftrs = tf.identity(usr_ftrs, name='usr_ftrs_projection')
                 num_usr_fields = 1
             else:
