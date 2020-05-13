@@ -62,9 +62,7 @@ class BestCheckpointCopier(tf.estimator.Exporter):
         self.pmetric = pmetric
         self.sort_reverse = sort_reverse
         self.eval_log_file = eval_log_file
-        if self.eval_log_file is not None:
-            with tf.gfile.Open(eval_log_file, 'w') as fout:
-                fout.write("***** Evaluation on Dev Set *****\n")
+        self._log("***** Evaluation on dev set during training *****")
         super().__init__()
 
     def _copyCheckpoint(self, checkpoint):
@@ -106,7 +104,7 @@ class BestCheckpointCopier(tf.estimator.Exporter):
         """
         Formatting log.
         """
-        print('[{}] {}'.format(self.__class__.__name__, statement))
+        print(statement)
         if self.eval_log_file is not None:
             with tf.gfile.Open(self.eval_log_file, 'a') as fout:
                 fout.write(statement + '\n')
@@ -134,9 +132,9 @@ class BestCheckpointCopier(tf.estimator.Exporter):
             if metric != self.pmetric and metric != 'global_step':
                 cm = eval_result[metric]
                 if not hasattr(cm, "__len__"):
-                    self._log("## {} : {}".format(metric, cm))
+                    self._log("{} : {}".format(metric, cm))
                 else:
-                    self._log("## {} : ".format(cm))
+                    self._log("{} : ".format(cm))
                     self._log(str(cm))
         return float(eval_result[self.pmetric])
 
@@ -165,4 +163,6 @@ class BestCheckpointCopier(tf.estimator.Exporter):
             tf.estimator.BestExporter._garbage_collect_exports(self, export_path)
         else:
             self._log('skipping checkpoint {} with {} = {}'.format(checkpoint.file, self.pmetric, checkpoint.score))
+        # print new line.
+        self._log('')
         return export_result

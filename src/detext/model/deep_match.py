@@ -124,7 +124,6 @@ class DeepMatch:
             sim_ftrs = tf.identity(sim_ftrs, name="sim_ftrs")
 
         if hparams.get('ftr_mean') is not None and self._wide_ftrs is not None:
-            print("--- use feature normalization ---")
             ftr_mean = tf.constant(hparams.ftr_mean, dtype=tf.float32)
             ftr_std = tf.constant(hparams.ftr_std, dtype=tf.float32)
             self._wide_ftrs = (self._wide_ftrs - ftr_mean) / ftr_std
