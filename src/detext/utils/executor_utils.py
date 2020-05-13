@@ -23,7 +23,7 @@ def get_executor_task_type():
         tf_config_json = json.loads(tf_config)
 
         # Logging the status of current worker/evaluator
-        logging.info("Running with TF_CONFIG: ".format(tf_config_json))
+        logging.info("Running with TF_CONFIG: {}".format(tf_config_json))
         task_type = tf_config_json.get('task', {}).get('type')
         logging.info("=========== Current executor task type: {} ==========".format(task_type))
         return task_type
