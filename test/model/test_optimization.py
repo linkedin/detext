@@ -1,8 +1,17 @@
+import os
+import shutil
 import tensorflow as tf
 from detext.train import optimization
 
 
+tmp_out_dir = "/tmp/detext-optimization-test"
+
+
 class OptimizationTest(tf.test.TestCase):
+
+    def _cleanUp(self, tmp_out_dir):
+        if os.path.exists(tmp_out_dir):
+            shutil.rmtree(tmp_out_dir, ignore_errors=True)
 
     def test_adam(self):
         with self.test_session() as sess:
@@ -45,8 +54,12 @@ class OptimizationTest(tf.test.TestCase):
                 num_warmup_steps=0,
                 lr_bert=0.00001,
                 optimizer="bert_adam",
-                use_horovod=False
+                use_horovod=False,
+                ftr_ext='cnn',
+                out_dir=tmp_out_dir
             )
+            if not tf.gfile.Exists(hparams.out_dir):
+                tf.gfile.MakeDirs(hparams.out_dir)
             train_op, _, _ = optimization.create_optimizer(hparams, loss)
 
             init_op = tf.group(tf.global_variables_initializer(),
@@ -57,6 +70,7 @@ class OptimizationTest(tf.test.TestCase):
             print(bert_w_v, non_bert_w_v)
             # The difference of weight values (gradient) reflects the learning arte difference
             self.assertAllClose((bert_w_v - 0.1) / (non_bert_w_v - 0.1), [0.01, 0.01, 0.01], rtol=1e-2, atol=1e-2)
+            self._cleanUp(tmp_out_dir)
 
 
 if __name__ == "__main__":
