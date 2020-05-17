@@ -45,7 +45,7 @@ def _get_padded_shapes_and_values(feature_names, PAD, vocab_table, PAD_FOR_ID_FT
         elif name == 'weight':
             padded_shapes[name] = tf.TensorShape([])
             padded_values[name] = 0.0
-        elif name == 'uid':
+        elif name in ('uid', 'task_id'):
             padded_shapes[name] = tf.TensorShape([])
             padded_values[name] = tf.cast(0, tf.int64)
         elif name == 'wide_ftrs':
@@ -80,9 +80,9 @@ def _get_tfrecord_feature_parsing_schema(feature_names):
         elif name == 'weight':
             features_tfr[name] = tf.FixedLenFeature(shape=[1], dtype=tf.float32)
             # Default uid as feature for detext integration, will be -1 by default if not present in data
-        elif name == 'uid':
+        elif name in ('uid', 'task_id'):
             features_tfr[name] = tf.FixedLenFeature(shape=[1], dtype=tf.int64)
-        elif name.startswith('doc_') or name.startswith('docId_'):
+        elif name.startswith(('doc_', 'docId_')):
             features_tfr[name] = tf.VarLenFeature(dtype=tf.string)
         elif name in ('wide_ftrs', 'label', 'wide_ftrs_sp_val'):
             features_tfr[name] = tf.VarLenFeature(dtype=tf.float32)
@@ -310,7 +310,7 @@ def tfrecord_transform_fn(dataset,
         features = dict()
         for name in feature_names:
             t = example[name]
-            if name != 'uid':
+            if name not in ('uid', 'task_id'):
                 t = _cast_to_dtype_of_smaller_size(t)
             t = _convert_ftrs_to_dense_tensor(t, name)
 
@@ -321,7 +321,7 @@ def tfrecord_transform_fn(dataset,
             if name.startswith('usrId_') or name.startswith('docId_'):
                 t = process_id(t, vocab_table_for_id_ftr, PAD_FOR_ID_FTR)
 
-            if name == 'query' or name.startswith('usr_') or name.startswith('usrId_') or name == 'weight' or name == 'uid':
+            if name in ('query', 'weight', 'uid', 'task_id') or name.startswith(('usr_', 'usrId_')):
                 t = tf.squeeze(t, axis=0)
 
             features[name] = t

@@ -18,6 +18,7 @@
 .idea/
 .tox*
 .venv*
+venv
 /*/*pinned.txt
 /*/MANIFEST
 /*/activate

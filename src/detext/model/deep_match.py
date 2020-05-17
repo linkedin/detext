@@ -23,6 +23,7 @@ class DeepMatch:
                  usr_fields=None,
                  doc_id_fields=None,
                  usr_id_fields=None,
+                 task_id_field=None,
                  ):
         """
         Build the deep match graph.
@@ -36,6 +37,7 @@ class DeepMatch:
             shape=[batch_size, usr_field_length]
         :param doc_id_fields: list(Tensor)  List of user id fields. Each has shape=[batch_size, doc_id_field_length]
         :param usr_id_fields: list(Tensor)  List of doc id fields. Each has shape=[batch_size, usr_id_field_length]
+        :param task_id_field: Tensor  Task id for multitask. Shape=[batch_size, ]
         :param hparams: HParams  Hyper parameters
         :param mode: TRAIN/EVAL/INFER
         """
@@ -48,6 +50,7 @@ class DeepMatch:
         self._doc_fields = doc_fields
         self._usr_id_fields = usr_id_fields
         self._doc_id_fields = doc_id_fields
+        self._task_id_field = task_id_field
         self._hparams = hparams
         self._mode = mode
 
@@ -161,29 +164,25 @@ class DeepMatch:
 
         self.final_ftrs = tf.reshape(final_ftrs, shape=[batch_size, max_group_size, emb_size])
 
-        # hidden layer
-        hidden_ftrs = self.final_ftrs
-        for i, hidden_size in enumerate(hparams.num_hidden):
-            if hidden_size == 0:
-                continue
-            hidden_ftrs = tf.layers.dense(
-                hidden_ftrs,
-                units=hidden_size,
-                use_bias=True,
-                activation=tf.tanh,
-                name="hidden_projection_" + str(i))
+        # mlp and score layers
+        if hparams.task_ids is not None:
+            # derive individual task score shape
+            score_shape = [batch_size, tf.maximum(max_group_size, hparams.num_classes)]
+            scores = tf.zeros(shape=score_shape, dtype="float32")
+            for task_id in hparams.task_ids.keys():
+                task_score = self.add_mlp_and_score_layers(
+                    input_layer=self.final_ftrs,
+                    prefix='task_' + str(task_id) + '_'
+                )
 
-        # final score for query/doc pairs
-        scores = tf.layers.dense(
-            hidden_ftrs,
-            units=hparams.num_classes,
-            use_bias=True,
-            activation=None,
-            name="scoring")
-        if hparams.num_classes <= 1:
-            scores = tf.squeeze(scores, axis=-1)  # shape=[batch_size, max_group_size]
+                # use task_mask to zero out other tasks' score
+                task_mask = tf.cast(tf.equal(self._task_id_field, int(task_id)), dtype=tf.float32)
+                # broadcast task_mask for compatible tensor shape with scores tensor
+                task_mask = tf.transpose(tf.broadcast_to(task_mask, score_shape[::-1]))
+                scores += task_mask * task_score
         else:
-            scores = tf.squeeze(scores, axis=-2)  # shape=[batch_size, num_classes]
+            scores = self.add_mlp_and_score_layers(self.final_ftrs)
+
         return scores
 
     def add_empty_str_ftr(self, max_group_size):
@@ -220,3 +219,35 @@ class DeepMatch:
                 process_text(usr_field)
                 num_ftrs += 1
         return all_ftrs, num_ftrs
+
+    def add_mlp_and_score_layers(self, input_layer, prefix=''):
+        """
+        Add multi-perception and scoring layers
+        """
+        hparams = self._hparams
+        # hidden layer
+        hidden_ftrs = input_layer
+        for i, hidden_size in enumerate(hparams.num_hidden):
+            if hidden_size == 0:
+                continue
+            hidden_ftrs = tf.layers.dense(
+                hidden_ftrs,
+                units=hidden_size,
+                use_bias=True,
+                activation=tf.tanh,
+                name=prefix + "hidden_projection_" + str(i))
+
+        # final score for query/doc pairs
+        scores = tf.layers.dense(
+            hidden_ftrs,
+            units=hparams.num_classes,
+            use_bias=True,
+            activation=None,
+            name=prefix + "scoring")
+
+        if hparams.num_classes <= 1:
+            scores = tf.squeeze(scores, axis=-1)  # shape=[batch_size, max_group_size]
+        else:
+            scores = tf.squeeze(scores, axis=-2)  # shape=[batch_size, num_classes]
+
+        return scores
