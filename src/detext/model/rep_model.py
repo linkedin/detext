@@ -150,12 +150,34 @@ class RepModel(object):
             num_sim_ftrs = ftr_size * num_doc_fields
             return num_sim_ftrs, sim_ftrs
 
+        # If use_doc_projection, then the n doc fields are projected to 1 vector space
+        if hparams.use_doc_projection:
+            doc_ftrs = tf.reshape(doc_ftrs, shape=[batch_size, max_group_size, 1, ftr_size * num_doc_fields])
+            doc_ftrs = tf.layers.dense(doc_ftrs,
+                                       ftr_size,
+                                       use_bias=True,
+                                       activation=tf.tanh,
+                                       name="doc_ftrs_projection_layer")  # [batch_size, max_group_size, 1, ftr_size]
+            doc_ftrs = tf.identity(doc_ftrs, name='doc_ftrs_projection')
+            num_doc_fields = 1
+
         # Compute interaction between user text/query and document text
         num_usr_fields = 0
         tot_usr_ftrs = []
         if usr_ftrs is not None:
+            # If use_usr_projection, then the n usr fields are projected to 1 vector space
+            if hparams.use_usr_projection:
+                usr_ftrs = tf.reshape(usr_ftrs, shape=[batch_size, 1, ftr_size * self.num_usr_fields])
+                usr_ftrs = tf.layers.dense(usr_ftrs,
+                                           ftr_size,
+                                           use_bias=True,
+                                           activation=tf.tanh,
+                                           name="usr_ftrs_projection_layer")  # [batch_size, 1, ftr_size]
+                usr_ftrs = tf.identity(usr_ftrs, name='usr_ftrs_projection')
+                num_usr_fields = 1
+            else:
+                num_usr_fields += self.num_usr_fields
             tot_usr_ftrs.append(usr_ftrs)
-            num_usr_fields += self.num_usr_fields
 
         # Treat query as one user field and append it to user field
         if query_ftrs is not None:
