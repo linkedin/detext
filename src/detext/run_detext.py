@@ -153,7 +153,6 @@ def add_arguments(parser):
                         help="Weights for each task specified in task_ids. E.g., 0.5,0.3,0.2")
 
 
-
 def str2bool(v):
     if v.lower() in ('true', '1'):
         return True
