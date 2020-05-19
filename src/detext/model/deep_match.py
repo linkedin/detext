@@ -169,7 +169,7 @@ class DeepMatch:
             # derive individual task score shape
             score_shape = [batch_size, tf.maximum(max_group_size, hparams.num_classes)]
             scores = tf.zeros(shape=score_shape, dtype="float32")
-            for task_id in hparams.task_ids.keys():
+            for task_id in hparams.task_ids:
                 task_score = self.add_mlp_and_score_layers(
                     input_layer=self.final_ftrs,
                     prefix='task_' + str(task_id) + '_'

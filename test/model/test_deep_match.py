@@ -389,7 +389,8 @@ class TestDeepMatch(tf.test.TestCase):
         task_id_field = tf.constant([1, 0])
 
         hparamscp = copy.copy(self.hparams)
-        hparamscp.task_ids = {'0': 0.2, '1': 0.8}
+        hparamscp.task_ids = [0, 1]
+        hparamscp.task_weights = [0.2, 0.8]
 
         dm = deep_match.DeepMatch(query=query,
                                   wide_ftrs=wide_ftrs,

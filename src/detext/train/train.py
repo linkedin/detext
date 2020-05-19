@@ -304,14 +304,16 @@ def model_fn(features, labels, mode, params):
     group_size_field = features['group_size'] if mode != tf.estimator.ModeKeys.PREDICT else None
 
     # For multitask training
-    task_id_field = features.get('task_id', None)
+    task_id_field = features.get('task_id', None)  # shape=[batch_size,]
 
-    # Override the default weight for multitask from input params task_ids and task_weights
+    # Update the weight with each task's weight such that weight per document = weight * task_weight
     if params.task_ids is not None:
-        weight = tf.zeros(shape=tf.shape(weight), dtype="float32")
-        for task_id, task_weight in params.task_ids.items():
-            task_mask = tf.cast(tf.equal(task_id_field, task_id), dtype=tf.float32)
-            weight += task_weight * task_mask
+        task_ids = params.task_ids  # e.g. [0, 1, 2]
+        task_weights = params.task_weights  # e.g. [0.1, 0.3, 0.6]
+        # Expand task_id_field with shape [batch_size, num_tasks]
+        expanded_task_id_field = tf.transpose(tf.broadcast_to(task_id_field, [len(task_ids), tf.shape(task_id_field)[0]]))
+        task_mask = tf.cast(tf.equal(expanded_task_id_field, task_ids), dtype=tf.float32)
+        weight *= tf.reduce_sum(task_mask * task_weights, 1)  # shape=[batch_size,]
 
     # build graph
     model = DeepMatch(query=query_field,

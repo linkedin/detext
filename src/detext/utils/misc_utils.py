@@ -158,17 +158,22 @@ def extend_hparams(hparams):
     assert hparams.l2 is None or hparams.l2 >= 0, "l1 scale must be non-negative"
 
     # Multi-task training: currently only support ranking tasks with both deep and wide features
-    if hparams.task_ids:
+    if hparams.task_ids is not None:
         # Check related inputs for multi-task training
         assert 'wide_ftrs_sp_idx' not in hparams.feature_names, "multi-task with sparse features not supported"
         assert 'task_id' in hparams.feature_names, "task_id feature not found for multi-task training"
 
+        # Parse task ids an weights from inputs and convert them into a map
         task_ids = [int(x.strip()) for x in hparams.task_ids.split(',')]
         raw_weights = [float(x.strip()) for x in hparams.task_weights.split(',')] if hparams.task_weights is not None \
             else [1.0] * len(task_ids)
         task_weights = [float(wt)/sum(raw_weights) for wt in raw_weights]  # Normalize task weights
+
+        # Check size of task_ids and task_weights
         assert len(task_ids) == len(task_weights), "size of task IDs and weights must match"
-        force_set_hparam(hparams, "task_ids", dict(zip(task_ids, task_weights)))
+
+        force_set_hparam(hparams, "task_ids", task_ids)
+        force_set_hparam(hparams, "task_weights", task_weights)
 
     return hparams
 
