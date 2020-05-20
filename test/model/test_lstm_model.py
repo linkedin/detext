@@ -20,9 +20,13 @@ class TestLstmModel(tf.test.TestCase):
                    [1, 3, 3, 1],
                    [5, 6, 0, 0]]]
 
-    def testLstmLmModelUnnormalized(self):
-        """Test unnormalized_lm LstmLmFtrExt outputs"""
+    def testLstm(self):
+        """Tests LSTM text encoder """
+        for num_layers in [1, 2, 3]:
+            for bidirectional in [True, False]:
+                self._testLstm(num_layers, bidirectional)
 
+    def _testLstm(self, num_layers, bidirectional):
         with tf.Graph().as_default():
             query = tf.constant(self.query, dtype=tf.int32)
             doc_field1 = tf.constant(self.doc_field1, dtype=tf.int32)
@@ -45,12 +49,12 @@ class TestLstmModel(tf.test.TestCase):
                 num_hidden=[0],
                 pad_id=0,
                 unit_type='lstm',
-                num_layers=1,
+                num_layers=num_layers,
                 num_residual_layers=0,
                 forget_bias=0.5,
                 random_seed=11,
                 rnn_dropout=0.,
-                bidirectional=True,
+                bidirectional=bidirectional,
             )
 
             model = lstm_model.LstmModel(query,

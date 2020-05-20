@@ -1,5 +1,5 @@
 """
-Overall pipeline to train the model.  It parses arguments, and trains a CLSM model.
+Overall pipeline to train the model.  It parses arguments, and trains a DeText model.
 """
 
 import sys
@@ -57,8 +57,8 @@ def add_arguments(parser):
     parser.add_argument("--bert_checkpoint", type=str, default=None, help="pretrained bert model checkpoint.")
 
     # LSTM related
-    parser.add_argument("--unit_type", type=str, default="lstm",
-                        help="RNN cell unit type. Support lstm/gru/layer_norm_lstm")
+    parser.add_argument("--unit_type", type=str, default="lstm", choices=["lstm"],
+                        help="RNN cell unit type. Currently only supports lstm. Will support other cell types in the future")
     parser.add_argument("--num_layers", type=int, default=1, help="RNN layers")
     parser.add_argument("--num_residual_layers", type=int, default=0,
                         help="Number of residual layers from top to bottom. For example, if `num_layers=4` and "
