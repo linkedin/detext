@@ -135,7 +135,7 @@ class LstmModel():
 
         # Whether to use bidirectional RNN
         if hparams.bidirectional:
-            seq_outputs, final_states = tf.nn.bidirectional_dynamic_rnn(
+            _, final_states = tf.nn.bidirectional_dynamic_rnn(
                 self.cell_fw,
                 self.cell_bw,
                 input_emb,
@@ -143,15 +143,21 @@ class LstmModel():
                 sequence_length=seq_len,
                 time_major=False,
                 swap_memory=True)
-            final_h = tf.concat([final_states[0].h, final_states[1].h], axis=1)
+            if hparams.num_layers == 1:
+                final_h = tf.concat([final_states[0].h, final_states[1].h], axis=1)
+            else:
+                final_h = tf.concat([final_states[0][-1].h, final_states[1][-1].h], axis=1)
         else:
-            seq_outputs, final_states = tf.nn.dynamic_rnn(
+            _, final_states = tf.nn.dynamic_rnn(
                 self.cell,
                 input_emb,
                 dtype=self.cell_dtype,
                 sequence_length=seq_len,
                 time_major=False,
                 swap_memory=True)  # [batch_size, seq_len, num_units]
-            final_h = final_states.h
+            if hparams.num_layers == 1:
+                final_h = final_states.h
+            else:
+                final_h = final_states[-1].h
 
         return final_h
