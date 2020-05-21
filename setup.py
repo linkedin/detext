@@ -1,9 +1,17 @@
 # Copyright (c) LinkedIn Corporation. All rights reserved. Licensed under the BSD-2 Clause license.
 # See LICENSE in the project root for license information.
 import setuptools
+
+from os import path
+this_directory = path.abspath(path.dirname(__file__))
+with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+    long_description = f.read()
+
 setuptools.setup(
     name='detext',
-    version='1.0.10',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
+    version='1.1.0',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
