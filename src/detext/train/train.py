@@ -104,6 +104,7 @@ def train(hparams, input_fn):
         train_spec=train_spec,
         eval_spec=eval_spec
     )
+    print("***** Training finished. *****")
 
     # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
     task_type = executor_utils.get_executor_task_type()
@@ -128,7 +129,7 @@ def train(hparams, input_fn):
                                       cnn_filter_window_size=max(
                                           hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0)
         )
-        print("\n\n***** Eval results of best model on test data: *****")
+        print("\n***** Evaluation on test set with best exported model: *****")
         for key in sorted(result.keys()):
             print("%s = %s" % (key, str(result[key])))
 

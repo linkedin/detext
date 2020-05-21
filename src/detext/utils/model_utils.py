@@ -7,7 +7,6 @@ def init_word_embedding(hparams, mode, name_prefix="w"):
 
     This function is only used by encoding models other than BERT
     """
-    embedding_name = "{}_embedding".format(name_prefix)
 
     we_trainable = hparams.get("we_trainable")
     we_file = hparams.get("we_file")
@@ -15,13 +14,13 @@ def init_word_embedding(hparams, mode, name_prefix="w"):
     num_units = hparams.get("num_units")
 
     if we_file is None:
+        embedding_name = "{}_pretrained_embedding".format(name_prefix)
         # Random initialization
         embedding = tf.get_variable(
             embedding_name, [vocab_size, num_units], dtype=tf.float32, trainable=we_trainable)
     else:
         # Initialize by pretrained word embedding
-        print('mode=' + str(mode))
-        print('Loading pretrained word embedding from {}'.format(we_file))
+        embedding_name = "{}_embedding".format(name_prefix)
         we = pickle.load(tf.gfile.Open(we_file, 'rb'))
         assert vocab_size == we.shape[0] and num_units == we.shape[1]
         embedding = tf.get_variable(

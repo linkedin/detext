@@ -329,7 +329,6 @@ def get_input_files(input_patterns):
         if tf.io.gfile.isdir(input_pattern):
             input_pattern = os.path.join(input_pattern, '*')
         input_files.extend(tf.gfile.Glob(input_pattern))
-    print("*** Input Files *** {} {}".format(input_patterns, len(input_files)))
     return input_files
 
 

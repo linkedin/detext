@@ -292,15 +292,13 @@ def main(argv):
 
         misc_utils.save_hparams(hparams.out_dir, hparams)
 
-        # set up logger
-        sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'logging.txt'))
     else:
         # TODO: move removal/creation to a hadoopShellJob st. it does not reside in distributed training code.
         logging.info("Waiting for chief to remove/create directories.")
         # Wait for dir created form chief
         time.sleep(10)
 
-    if task_type == executor_utils.EVALUATOR:
+    if task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE:
         # set up logger for evaluator
         sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'eval_log.txt'))
 

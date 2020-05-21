@@ -1,5 +1,6 @@
 import re
 import tensorflow as tf
+from os.path import join as path_join
 
 
 def create_optimizer(hparams, loss):
@@ -9,17 +10,18 @@ def create_optimizer(hparams, loss):
     """
     tvars = tf.trainable_variables()
 
-    # Print trainable variables
-    print("# Trainable variables")
-    total_param = 0
-    for param in tvars:
-        if param.name.startswith('bert'):
-            psize = 1
-            for s in param.get_shape():
-                psize *= s
-            total_param += psize
-        print("  %s, %s, %s" % (param.name, str(param.get_shape()), param.op.device))
-    print('total bert parameters:', total_param)
+    # Log trainable variables
+    with tf.gfile.Open(path_join(hparams.out_dir, 'network_structure.txt'), 'w') as fout:
+        fout.write("# Trainable variables\n")
+        total_deep_param = 0
+        for param in tvars:
+            if param.name.startswith(hparams.ftr_ext):
+                psize_bert = 1
+                for s in param.get_shape():
+                    psize_bert *= s
+                total_deep_param += psize_bert
+            fout.write("  %s, %s, %s\n" % (param.name, str(param.get_shape()), param.op.device))
+        fout.write('total {} parameters: {}\n'.format(hparams.ftr_ext, total_deep_param))
 
     # Define optimizer parameters
     init_lr = hparams.learning_rate

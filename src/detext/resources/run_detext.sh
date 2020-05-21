@@ -3,6 +3,7 @@ PYTHONPATH=../.. python ../run_detext.py \
 --ftr_ext=cnn \
 --feature_names=query,label,wide_ftrs,doc_title \
 --emb_sim_func=inner \
+--elem_rescale=True \
 --learning_rate=0.001 \
 --ltr=softmax \
 --max_len=32 \
