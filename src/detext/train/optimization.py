@@ -1,6 +1,7 @@
 import re
 import tensorflow as tf
 from os.path import join as path_join
+from detext.utils import executor_utils
 
 
 def create_optimizer(hparams, loss):
@@ -10,18 +11,24 @@ def create_optimizer(hparams, loss):
     """
     tvars = tf.trainable_variables()
 
-    # Log trainable variables
-    with tf.gfile.Open(path_join(hparams.out_dir, 'network_structure.txt'), 'w') as fout:
-        fout.write("# Trainable variables\n")
-        total_deep_param = 0
-        for param in tvars:
-            if param.name.startswith(hparams.ftr_ext):
-                psize_bert = 1
-                for s in param.get_shape():
-                    psize_bert *= s
-                total_deep_param += psize_bert
-            fout.write("  %s, %s, %s\n" % (param.name, str(param.get_shape()), param.op.device))
-        fout.write('total {} parameters: {}\n'.format(hparams.ftr_ext, total_deep_param))
+    if hparams.use_horovod:
+        import horovod.tensorflow as hvd
+
+    # Log trainable variables (with local mode, or chief for ps strategy or rank 0 for hvd training)
+    task_type = executor_utils.get_executor_task_type()
+    if (hparams.use_horovod is False and task_type in [executor_utils.CHIEF, executor_utils.LOCAL_MODE]) or \
+            (hparams.use_horovod is True and hvd.rank() == 0):
+        with tf.gfile.Open(path_join(hparams.out_dir, 'network_structure.txt'), 'w') as fout:
+            fout.write("# Trainable variables\n")
+            total_deep_param = 0
+            for param in tvars:
+                if param.name.startswith(hparams.ftr_ext):
+                    psize_bert = 1
+                    for s in param.get_shape():
+                        psize_bert *= s
+                    total_deep_param += psize_bert
+                fout.write("  %s, %s, %s\n" % (param.name, str(param.get_shape()), param.op.device))
+            fout.write('total {} parameters: {}\n'.format(hparams.ftr_ext, total_deep_param))
 
     # Define optimizer parameters
     init_lr = hparams.learning_rate
@@ -71,7 +78,6 @@ def create_optimizer(hparams, loss):
             exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
 
         if hparams.use_horovod:
-            import horovod.tensorflow as hvd
             # Horovod's distributed optimizer handles allreduce calls, synchronous only
             optimizer = hvd.DistributedOptimizer(optimizer, sparse_as_dense=True)
             grads_and_vars = optimizer.compute_gradients(loss, tvars)
