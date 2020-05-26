@@ -91,7 +91,8 @@ class TestDeepMatch(tf.test.TestCase):
         we_file_for_id_ftr=None,
         pad_id_for_id_ftr=0,
         use_doc_projection=False,
-        use_usr_projection=False
+        use_usr_projection=False,
+        task_ids=None,
     )
 
     def _get_constant_usr_fields(self):
@@ -379,6 +380,31 @@ class TestDeepMatch(tf.test.TestCase):
             with tf.Session() as sess:
                 sess.run(tf.global_variables_initializer())
                 self.assertAllEqual(dm.deep_ftr_model.sim_ftrs.eval().shape, self.group_size + [expected_num_sim_ftrs])
+
+    def testDeepMatchMultitaskRanking(self):
+        """Tests DeepMatch with multitask ranking"""
+        query = tf.constant(self.query, dtype=tf.int32)
+        doc_fields = self._get_constant_doc_fields()
+        wide_ftrs = tf.constant(self.wide_ftrs, dtype=tf.float32)
+        task_id_field = tf.constant([1, 0])
+
+        hparamscp = copy.copy(self.hparams)
+        hparamscp.task_ids = [0, 1]
+        hparamscp.task_weights = [0.2, 0.8]
+
+        dm = deep_match.DeepMatch(query=query,
+                                  wide_ftrs=wide_ftrs,
+                                  doc_fields=doc_fields,
+                                  hparams=hparamscp,
+                                  mode=tf.estimator.ModeKeys.EVAL,
+                                  task_id_field=task_id_field)
+
+        with self.test_session() as sess:
+            sess.run(tf.global_variables_initializer())
+            scores = sess.run(dm.scores)
+
+            # Check sizes and shapes
+            self.assertAllEqual(scores.shape, [2, 3])
 
 
 if __name__ == "__main__":

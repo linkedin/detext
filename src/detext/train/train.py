@@ -211,6 +211,8 @@ def serving_input_fn(hparams):
         "weight_placeholder", [], tf.float32, 'weight', hparams.feature_names, tf.constant([1.0], dtype=tf.float32))
     label_placeholder, label = train_helper.create_placeholder_for_ftrs(
         "label_placeholder", [None], tf.float32, 'label', hparams.feature_names)
+    task_id_placeholder, task_id = train_helper.create_placeholder_for_ftrs(
+        "task_id_placeholder", [], tf.int64, 'task_id', hparams.feature_names)
     # Placeholder tensors
     # Default uid as feature for detext integration, will be -1 by default if not present in data
     feature_placeholders = {'uid': uid_placeholder, 'weight': weight_placeholder, 'label': label_placeholder}
@@ -250,6 +252,9 @@ def serving_input_fn(hparams):
         elif fname == 'wide_ftrs_sp_idx':
             feature_placeholders[fname] = wide_ftr_sp_idx_placeholder
             features[fname] = wide_ftrs_sp_idx
+        elif fname == 'task_id':
+            feature_placeholders[fname] = task_id_placeholder
+            features[fname] = task_id
         elif fname == 'label' or fname == 'weight' or fname == 'uid':
             continue
         else:
@@ -299,6 +304,18 @@ def model_fn(features, labels, mode, params):
 
     group_size_field = features['group_size'] if mode != tf.estimator.ModeKeys.PREDICT else None
 
+    # For multitask training
+    task_id_field = features.get('task_id', None)  # shape=[batch_size,]
+
+    # Update the weight with each task's weight such that weight per document = weight * task_weight
+    if params.task_ids is not None:
+        task_ids = params.task_ids  # e.g. [0, 1, 2]
+        task_weights = params.task_weights  # e.g. [0.1, 0.3, 0.6]
+        # Expand task_id_field with shape [batch_size, num_tasks]
+        expanded_task_id_field = tf.transpose(tf.broadcast_to(task_id_field, [len(task_ids), tf.shape(task_id_field)[0]]))
+        task_mask = tf.cast(tf.equal(expanded_task_id_field, task_ids), dtype=tf.float32)
+        weight *= tf.reduce_sum(task_mask * task_weights, 1)  # shape=[batch_size,]
+
     # build graph
     model = DeepMatch(query=query_field,
                       wide_ftrs=wide_ftrs,
@@ -309,7 +326,8 @@ def model_fn(features, labels, mode, params):
                       hparams=params,
                       mode=mode,
                       wide_ftrs_sp_idx=wide_ftrs_sp_idx,
-                      wide_ftrs_sp_val=wide_ftrs_sp_val)
+                      wide_ftrs_sp_val=wide_ftrs_sp_val,
+                      task_id_field=task_id_field)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         loss = compute_loss(params, model.scores, label_field, group_size_field, weight)

@@ -88,6 +88,61 @@ class TestData(tf.test.TestCase):
             for text_arr, id_arr in zip(usr_currTitles, usrId_currTitles):
                 self.assertAllEqual(text_arr[text_arr != self.PAD_ID][1:-1], id_arr[id_arr != self.PAD_ID])
 
+    def testMultitaskInputFnBuilderTfrecord(self):
+        """Test additional input from multitask training in eval mode"""
+        res_dir = os.path.dirname(__file__) + '/../resources'
+
+        # create a vocab table
+        vocab_table = vocab_utils.read_tf_vocab(res_dir + '/vocab.txt', '[UNK]')
+
+        # dataset dir
+        data_dir = os.path.join(res_dir, 'train', 'multitask', 'tfrecord')
+
+        # test minimum features required for multitask jobs
+        feature_names = ('label', 'query', 'doc_field1', 'doc_field2', 'wide_ftrs', 'task_id')
+
+        batch_size = 5
+        dataset = data_fn.input_fn(input_pattern=data_dir,
+                                   metadata_path=None,
+                                   batch_size=batch_size,
+                                   mode=tf.estimator.ModeKeys.EVAL,
+                                   vocab_table=vocab_table,
+                                   vocab_table_for_id_ftr=vocab_table,
+                                   feature_names=feature_names,
+                                   CLS='[CLS]',
+                                   SEP='[SEP]',
+                                   PAD='[PAD]',
+                                   PAD_FOR_ID_FTR='[PAD]',
+                                   max_len=16,
+                                   cnn_filter_window_size=1)
+
+        # Make iterator
+        iterator = dataset.make_initializable_iterator()
+        batch_data = iterator.get_next()
+
+        with tf.Session() as sess:
+            sess.run([tf.global_variables_initializer(), tf.tables_initializer()])
+            sess.run([iterator.initializer])
+            batch_data_val, = sess.run([batch_data])
+            features, label = batch_data_val
+
+            # First dimension of data should be batch_size
+            for ftr_name in feature_names:
+                if ftr_name != 'label':
+                    self.assertTrue(ftr_name in features)
+                    self.assertTrue(features[ftr_name].shape[0] == batch_size)
+
+            self.assertTrue(label['label'].shape[0] == batch_size)
+
+            task_ids = features['task_id']
+
+            # Check task_id dimension size
+            self.assertEqual(len(task_ids.shape), 1)
+
+            # Check task_id value in the sample data
+            for t_id in task_ids:
+                self.assertTrue(t_id in (0, 1))
+
 
 if __name__ == "__main__":
     tf.test.main()

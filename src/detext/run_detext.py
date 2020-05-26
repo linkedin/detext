@@ -146,6 +146,12 @@ def add_arguments(parser):
 
     parser.add_argument('--use_horovod', type=str2bool, default=False, help="whether to use horovod for sync distributed training")
 
+    # multitask training related
+    parser.add_argument('--task_ids', type=str, default=None,
+                        help="All types of task IDs for multitask training. E.g., 1,2,3")
+    parser.add_argument('--task_weights', type=str, default=None,
+                        help="Weights for each task specified in task_ids. E.g., 0.5,0.3,0.2")
+
 
 def str2bool(v):
     if v.lower() in ('true', '1'):
@@ -226,6 +232,8 @@ def create_hparams(flags):
         use_tfr_loss=flags.use_tfr_loss,
         use_horovod=flags.use_horovod,
         normalized_lm=flags.normalized_lm,
+        task_ids=flags.task_ids,
+        task_weights=flags.task_weights,
 
         # Vocab and word embedding for id features
         PAD_FOR_ID_FTR=flags.PAD_FOR_ID_FTR,
