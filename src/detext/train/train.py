@@ -19,7 +19,6 @@ def train(hparams, input_fn):
     :param input_fn: input function to create train/eval specs
     :return:
     """
-    eval_log_file = None
     if hparams.use_horovod is True:
         import horovod.tensorflow as hvd
     train_strategy = tf.contrib.distribute.ParameterServerStrategy()
