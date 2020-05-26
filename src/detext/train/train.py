@@ -22,7 +22,6 @@ def train(hparams, input_fn):
     eval_log_file = None
     if hparams.use_horovod is True:
         import horovod.tensorflow as hvd
-        eval_log_file = path_join(hparams.out_dir, 'eval_log.txt')
     train_strategy = tf.contrib.distribute.ParameterServerStrategy()
     estimator = get_estimator(hparams, strategy=train_strategy)
 
@@ -39,8 +38,7 @@ def train(hparams, input_fn):
             exports_to_keep=1,  # keeping the best savedmodel
             pmetric='metric/{}'.format(hparams.pmetric),
             compare_fn=lambda x, y: x.score > y.score,  # larger metric better
-            sort_reverse=True,
-            eval_log_file=eval_log_file)
+            sort_reverse=True)
         exporter_list = [best_checkpoint_exporter]
 
     # Handle sync distributed training case via use_horovod
