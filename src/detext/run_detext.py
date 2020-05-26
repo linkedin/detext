@@ -115,7 +115,8 @@ def add_arguments(parser):
     # Misc
     parser.add_argument("--random_seed", type=int, default=1234, help="Random seed (>0, set a specific seed).")
     parser.add_argument("--steps_per_stats", type=int, default=100, help="training steps to print statistics.")
-    parser.add_argument("--total_eval_steps", type=int, default=None, help="total number of evaluation steps")
+    parser.add_argument("--num_eval_round", type=int, default=None, help="number of evaluation round,this "
+                                                                         "param will overwrite steps_per_eval")
     parser.add_argument("--steps_per_eval", type=int, default=1000, help="training steps to evaluate datasets.")
     parser.add_argument("--keep_checkpoint_max", type=int, default=5,
                         help="The maximum number of recent checkpoint files to keep. If 0, all checkpoint "
@@ -196,7 +197,7 @@ def create_hparams(flags):
         random_seed=flags.random_seed,
         steps_per_stats=flags.steps_per_stats,
         steps_per_eval=flags.steps_per_eval,
-        total_eval_steps=flags.total_eval_steps,
+        num_eval_round=flags.num_eval_round,
         keep_checkpoint_max=flags.keep_checkpoint_max,
         max_len=flags.max_len,
         min_len=flags.min_len,
@@ -281,8 +282,8 @@ def main(argv):
             hparams.train_batch_size,
             hparams.metadata_path is None)
     # if total_eval_steps is set, overwrite steps_per_eval
-    if hparams.total_eval_steps is not None:
-        hparams.steps_per_eval = max(1, int(hparams.num_train_steps / hparams.total_eval_steps))
+    if hparams.num_eval_round is not None:
+        hparams.steps_per_eval = max(1, int(hparams.num_train_steps / hparams.num_eval_round))
 
     # Create directory and launch tensorboard
     if task_type == executor_utils.CHIEF or task_type == executor_utils.LOCAL_MODE:
