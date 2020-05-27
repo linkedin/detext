@@ -20,15 +20,20 @@ def create_optimizer(hparams, loss):
             (hparams.use_horovod is True and hvd.rank() == 0):
         with tf.gfile.Open(path_join(hparams.out_dir, 'network_structure.txt'), 'w') as fout:
             fout.write("# Trainable variables\n")
-            total_deep_param = 0
+            total_deep_params = 0
+            total_params = 0
             for param in tvars:
+                psize = 1
+                for s in param.get_shape():
+                    psize *= s
+                total_params += psize
                 if param.name.startswith(hparams.ftr_ext):
-                    psize_bert = 1
-                    for s in param.get_shape():
-                        psize_bert *= s
-                    total_deep_param += psize_bert
+                    total_deep_params += psize
                 fout.write("  %s, %s, %s\n" % (param.name, str(param.get_shape()), param.op.device))
-            fout.write('total {} parameters: {}\n'.format(hparams.ftr_ext, total_deep_param))
+            fout.write('\n')
+            fout.write('# Total trainable params: {}\n'.format(total_params))
+            fout.write('# Out of the total trainable params, the total {} parameters: {}\n'
+                       .format(hparams.ftr_ext, total_deep_params))
 
     # Define optimizer parameters
     init_lr = hparams.learning_rate
