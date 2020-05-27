@@ -71,7 +71,7 @@ def add_arguments(parser):
                         help="Whether to use normalized lm. This option only works for unit_type=lstm_lm")
 
     # Optimizer
-    parser.add_argument("--optimizer", type=str, choices=["sgd", "adam", "bert_adam"], default="sgd",
+    parser.add_argument("--optimizer", type=str, choices=["sgd", "adam", "bert_adam", "bert_lamb"], default="sgd",
                         help="Type of optimizer to use. bert_adam is similar to the optimizer implementation in bert.")
     parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Clip gradients to this norm.")
     parser.add_argument("--learning_rate", type=float, default=1.0, help="Learning rate. Adam: 0.001 | 0.0001")
