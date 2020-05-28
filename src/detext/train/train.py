@@ -21,12 +21,14 @@ def train(hparams, input_fn):
     """
     if hparams.use_horovod is True:
         import horovod.tensorflow as hvd
+    else:
+        hvd = None
     train_strategy = tf.contrib.distribute.ParameterServerStrategy()
     estimator = get_estimator(hparams, strategy=train_strategy)
 
     # Set model export config for evaluator or primary worker of horovod
     exporter_list = None
-    if hparams.use_horovod is False or (hparams.use_horovod is True and hvd.rank() == 0):
+    if not hvd or hvd.rank() == 0:
         best_model_name = 'best_' + hparams.pmetric
         # Exporter to save best (in terms of pmetric) checkpoint in the folder [best_model_name],
         # and export to savedmodel for prediction.
@@ -35,114 +37,88 @@ def train(hparams, input_fn):
             serving_input_receiver_fn=lambda: serving_input_fn(hparams),
             checkpoints_to_keep=1,  # keeping the best checkpoint
             exports_to_keep=1,  # keeping the best savedmodel
-            pmetric='metric/{}'.format(hparams.pmetric),
+            pmetric=f'metric/{hparams.pmetric}',
             compare_fn=lambda x, y: x.score > y.score,  # larger metric better
             sort_reverse=True)
         exporter_list = [best_checkpoint_exporter]
 
     # Handle sync distributed training case via use_horovod
-    if hparams.use_horovod:
-        import horovod.tensorflow as hvd
 
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states from
         # rank 0 to all other processes. This is necessary to ensure consistent
         # initialization of all workers when training is started with random weights or
         # restored from a checkpoint.
-        bcast_hook = hvd.BroadcastGlobalVariablesHook(0)
+    bcast_hook = [hvd.BroadcastGlobalVariablesHook(0)] if hvd else None
+
+    def input_fn_common(pattern, batch_size=hparams.test_batch_size, mode=tf.estimator.ModeKeys.EVAL, hvd_info=None):
+        return lambda: input_fn(
+            input_pattern=pattern, metadata_path=hparams.metadata_path, batch_size=batch_size, mode=mode,
+            vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK), hvd_info=hvd_info,
+            vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr, hparams.UNK_FOR_ID_FTR),
+            feature_names=hparams.feature_names, CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
+            PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR, max_len=hparams.max_len, min_len=hparams.min_len,
+            cnn_filter_window_size=max(hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0)
 
     # Create TrainSpec for model training
     train_spec = tf.estimator.TrainSpec(
-        input_fn=lambda: input_fn(input_pattern=hparams.train_file,
-                                  metadata_path=hparams.metadata_path,
-                                  batch_size=hparams.train_batch_size,
-                                  mode=tf.estimator.ModeKeys.TRAIN,
-                                  vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                  vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
-                                                                                   hparams.UNK_FOR_ID_FTR),
-                                  feature_names=hparams.feature_names,
-                                  CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                  PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                  max_len=hparams.max_len,
-                                  min_len=hparams.min_len,
-                                  cnn_filter_window_size=max(
-                                      hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0,
-                                  # Add horovod information if applicable
-                                  hvd_info=hparams.hvd_info if hparams.use_horovod else None
-                                  ),
-        hooks=[bcast_hook] if hparams.use_horovod else None,  # Ensure proper initialization with horovod
+        input_fn=input_fn_common(hparams.train_file,
+                                 batch_size=hparams.train_batch_size,
+                                 mode=tf.estimator.ModeKeys.TRAIN,
+                                 # Add horovod information if applicable
+                                 hvd_info=hparams.hvd_info if hvd else None),
+        hooks=bcast_hook,
         max_steps=hparams.num_train_steps)
 
     eval_spec = tf.estimator.EvalSpec(
-        input_fn=lambda: input_fn(input_pattern=hparams.dev_file,
-                                  metadata_path=hparams.metadata_path,
-                                  batch_size=hparams.test_batch_size,
-                                  mode=tf.estimator.ModeKeys.EVAL,
-                                  vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                  vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr,
-                                                                                   hparams.UNK_FOR_ID_FTR),
-                                  feature_names=hparams.feature_names,
-                                  CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                  PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                  max_len=hparams.max_len,
-                                  min_len=hparams.min_len,
-                                  cnn_filter_window_size=max(
-                                      hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
-                                  ),
+        input_fn=input_fn_common(hparams.dev_file),
         exporters=exporter_list,
         steps=None,
         # Set throttle_secs to 10 min to avoid warning to spam logs
         # Set throttle to 0 for horovod: https://github.com/horovod/horovod/issues/182#issuecomment-533897757
-        throttle_secs=0 if hparams.use_horovod else 600,
+        throttle_secs=0 if hvd else 600,
         start_delay_secs=10)
 
     # Training and evaluation with dev set
     tf.estimator.train_and_evaluate(
         estimator=estimator,
         train_spec=train_spec,
-        eval_spec=eval_spec
-    )
+        eval_spec=eval_spec)
     print("***** Training finished. *****")
 
     # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
     task_type = executor_utils.get_executor_task_type()
     do_evaluate = task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE
-    if (not hparams.use_horovod and do_evaluate) or (hparams.use_horovod and hvd.rank() == 0):
+    if (not hvd and do_evaluate) or (hvd and hvd.rank() == 0):
         best_checkpoint_dir = path_join(hparams.out_dir, best_model_name)
         estimator_savedmodel = get_estimator(hparams, strategy=train_strategy, best_checkpoint=best_checkpoint_dir)
-        result = estimator_savedmodel.evaluate(
-            input_fn=lambda: input_fn(input_pattern=hparams.test_file,
-                                      metadata_path=hparams.metadata_path,
-                                      batch_size=hparams.test_batch_size,
-                                      mode=tf.estimator.ModeKeys.EVAL,
-                                      vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK),
-                                      vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(
-                                          hparams.vocab_file_for_id_ftr,
-                                          hparams.UNK_FOR_ID_FTR),
-                                      feature_names=hparams.feature_names,
-                                      CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-                                      PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR,
-                                      max_len=hparams.max_len,
-                                      min_len=hparams.min_len,
-                                      cnn_filter_window_size=max(
-                                          hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0)
-        )
+        result = estimator_savedmodel.evaluate(input_fn=input_fn_common(hparams.test_file))
         print("\n***** Evaluation on test set with best exported model: *****")
         for key in sorted(result.keys()):
             print("%s = %s" % (key, str(result[key])))
 
 
 def get_estimator(hparams, strategy, best_checkpoint=None):
+    config_kwargs = {
+        'save_summary_steps': hparams.steps_per_stats,
+        'save_checkpoints_steps': hparams.steps_per_eval,
+        'log_step_count_steps': hparams.steps_per_stats,
+        'keep_checkpoint_max': hparams.keep_checkpoint_max
+    }
+    # Handle sync distributed training case via use_horovod
+    if hparams.use_horovod:
+        import horovod.tensorflow as hvd
+        # Adjust config for horovod
+        session_config = tf.ConfigProto()
+        session_config.allow_soft_placement = True
+        # Pin each worker to a GPU
+        session_config.gpu_options.visible_device_list = str(hvd.local_rank())
+        config_kwargs['session_config'] = session_config
+
+        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir if hvd.rank() == 0 else None
     # Handle single gpu or async distributed training case
-    if hparams.use_horovod is False:
-        config = tf.estimator.RunConfig(
-            save_summary_steps=hparams.steps_per_stats,
-            save_checkpoints_steps=hparams.steps_per_eval,
-            log_step_count_steps=hparams.steps_per_stats,
-            keep_checkpoint_max=hparams.keep_checkpoint_max,
-            train_distribute=strategy
-        )
-        # TO DO:
-        # In the future we will support both sync training and async training on mlearn.
+    else:
+        # TODO:
+        # In the future we will support both sync training and async training on TOnY.
         # Now the sync training can run on kubernetes cluster using hvd lib.
         # 1. async training.
         # train_distribute=tf.contrib.distribute.ParameterServerStrategy()  #async strategy.
@@ -150,31 +126,12 @@ def get_estimator(hparams, strategy, best_checkpoint=None):
         # train_distribute=tf.distribute.experimental.MultiWorkerMirroredStrategy() #sync strategy,
         # and remember to remove ps in tony params when use sync strategy,
         # Also note that MultiWorkerMirroredStrategy doesn't support bert-adam optimizer, but can use adam optimizer
-
-        # Build the estimator
+        config_kwargs['train_distribute'] = strategy
         model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
 
-        # Handle sync distributed training case via use_horovod
-    else:
-        import horovod.tensorflow as hvd
-        # Adjust config for horovod
-        session_config = tf.ConfigProto()
-        session_config.allow_soft_placement = True
-        # Pin each worker to a GPU
-        session_config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-        config = tf.estimator.RunConfig(
-            save_summary_steps=hparams.steps_per_stats,
-            save_checkpoints_steps=hparams.steps_per_eval,
-            log_step_count_steps=hparams.steps_per_stats,
-            keep_checkpoint_max=hparams.keep_checkpoint_max,
-            session_config=session_config)
-
-        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir if hvd.rank() == 0 else None
-        estimator = tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
-
-    return estimator
+    config = tf.estimator.RunConfig(**config_kwargs)
+    # Build the estimator
+    return tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
 
 
 def serving_input_fn(hparams):
@@ -344,32 +301,24 @@ def model_fn(features, labels, mode, params):
             metric_op_name = 'metric/{}'.format(metric_name)
             topk = int(metric_name.split('@')[1]) if '@' in metric_name else 10  # Default topk
             if metric_name.startswith('ndcg'):
-                eval_metric_ops[metric_op_name] = metrics.compute_ndcg_tfr(
-                    model.scores, label_field, features, topk)
+                metric = metrics.compute_ndcg_tfr(model.scores, label_field, features, topk)
             elif metric_name.startswith('mrr'):
-                eval_metric_ops[metric_op_name] = metrics.compute_mrr_tfr(
-                    model.scores, label_field, features)
+                metric = metrics.compute_mrr_tfr(model.scores, label_field, features)
             elif metric_name.startswith('precision'):
-                eval_metric_ops[metric_op_name] = metrics.compute_precision_tfr(
-                    model.scores, label_field, features, topk)
+                metric = metrics.compute_precision_tfr(model.scores, label_field, features, topk)
             elif metric_name.startswith('traditional_ndcg'):
-                eval_metric_ops[metric_op_name] = metrics.compute_ndcg(
-                    model.scores, label_field, group_size_field, topk)
+                metric = metrics.compute_ndcg(model.scores, label_field, group_size_field, topk)
             elif metric_name.startswith('li_mrr'):
-                eval_metric_ops[metric_op_name] = metrics.compute_mrr(
-                    model.scores, labels['label'], features['group_size'], topk)
+                metric = metrics.compute_mrr(model.scores, labels['label'], features['group_size'], topk)
             elif metric_name == 'auc':
-                eval_metric_ops[metric_op_name] = metrics.compute_auc(
-                    model.scores, label_field
-                )
+                metric = metrics.compute_auc(model.scores, label_field)
             elif metric_name == 'accuracy':
-                eval_metric_ops[metric_op_name] = metrics.compute_accuracy(model.scores, label_field)
+                metric = metrics.compute_accuracy(model.scores, label_field)
             elif metric_name == 'confusion_matrix':
-                eval_metric_ops[metric_op_name] = metrics.compute_confusion_matrix(model.scores, label_field,
-                                                                                   params.num_classes)
+                metric = metrics.compute_confusion_matrix(model.scores, label_field, params.num_classes)
             else:
-                raise ValueError("Unsupported metrics: %s" % (metric_name))
-
+                raise ValueError(f"Unsupported metrics: {metric_name}")
+            eval_metric_ops[metric_op_name] = metric
         return tf.estimator.EstimatorSpec(mode,
                                           loss=loss,
                                           eval_metric_ops=eval_metric_ops)
