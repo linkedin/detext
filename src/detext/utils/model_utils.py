@@ -40,13 +40,10 @@ def _single_cell(unit_type, num_units, forget_bias, dropout,
     dropout = dropout if mode == tf.contrib.learn.ModeKeys.TRAIN else 0.0
     # Cell Type
     if unit_type == "lstm":
-        print("  LSTM, forget_bias=%g" % forget_bias)
         single_cell = tf.nn.rnn_cell.LSTMCell(num_units, forget_bias=forget_bias)
     elif unit_type == "gru":
-        print("  GRU")
         single_cell = tf.nn.rnn_cell.GRUCell(num_units)
     elif unit_type == "layer_norm_lstm":
-        print("  Layer Normalized LSTM, forget_bias=%g" % forget_bias)
         single_cell = tf.contrib.rnn.LayerNormBasicLSTMCell(
             num_units,
             forget_bias=forget_bias,
@@ -57,17 +54,14 @@ def _single_cell(unit_type, num_units, forget_bias, dropout,
     # Dropout (= 1 - keep_prob)
     if dropout > 0.0:
         single_cell = tf.contrib.rnn.DropoutWrapper(cell=single_cell, input_keep_prob=(1.0 - dropout))
-        print("  %s, dropout=%g " % (type(single_cell).__name__, dropout))
 
     # Residual
     if residual_connection:
         single_cell = tf.contrib.rnn.ResidualWrapper(single_cell)
-        print("  %s" % type(single_cell).__name__)
 
     # Device Wrapper
     if device_str:
         single_cell = tf.contrib.rnn.DeviceWrapper(single_cell, device_str)
-        print("  %s, device=%s" % (type(single_cell).__name__, device_str))
 
     return single_cell
 
