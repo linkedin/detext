@@ -8,6 +8,9 @@ DeText uses TFRecords format for training data.  In general, the input data shou
 * One field for "wide features" with name `wide_ftrs`
 * Multiple fields for "document fields" with name `doc_<field name>`
 * One field for "labels" with name `label`
+* [optional] Mutiple fields for "user fields" with name `usr_<field name>`
+* [optional] One field for "sparse wide features indices" with name `wide_ftrs_sp_idx` and one field for 
+  "sparse wide features values" with name `wide_ftrs_sp_val`
 
 We show an example of the prepared training data and explain the data format and shapes. 
 * `query` (string list containing only 1 string)

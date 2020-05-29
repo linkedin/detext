@@ -173,6 +173,7 @@ def create_sample_tfrecord(out_file):
                 "query": _bytes_feature([b"hello"]),
                 "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0, 22.0, 19.0]),
                 "doc_title": _bytes_feature([b"document title 1", b"title 2 ?", b"doc title 3 ?", b"doc title 4 ?"]),
+                "usr_headline": _bytes_feature([b"user headline"]),
                 "wide_ftrs_sp_idx": _int64_feature([1, 0, 2, 8]),
                 "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0, 12.0])
             }
@@ -187,6 +188,7 @@ def create_sample_tfrecord(out_file):
                 "query": _bytes_feature([b"hello"]),
                 "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0]),
                 "doc_title": _bytes_feature([b"document title 1 linkedin", b"doc title 2 ?", b"doc title 3 ?"]),
+                "usr_headline": _bytes_feature([b"user headline ?"]),
                 "wide_ftrs_sp_idx": _int64_feature([8, 0, 2]),
                 "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0])
             }

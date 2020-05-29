@@ -14,13 +14,15 @@ class SparseEmbModel:
         """ Computes a embedding given wide feature indices and values
         If wide_ftrs_sp_val is specified, users should keep consistency between wide_ftrs_sp_idx and wide_ftrs_sp_val
             -- the value of wide_ftrs_sp_idx[i] should be wide_ftrs_sp_val[i].
-        CAVEAT: it is required that padding value = 0 for wide_ftrs_sp_idx in data_fn and padding value = 1 for
+        CAVEAT: it is required that padding value = 0 for wide_ftrs_sp_idx in data_fn for
             wide_ftrs_sp_val since feature index 0 is used as the bias term.
 
         :param wide_ftrs_sp_idx: Feature indices. Shape=[batch_size, max_group_size, max_wide_ftrs_size]
         :param wide_ftrs_sp_val: Feature values. Shape=[batch_size, max_group_size, max_wide_ftrs_size]
         :param num_wide_sp: Number of unique sparse wide features. This should be LARGER than the maximum of
             features indices. Remember to add at least 1 to max(indices) avoid overflow due to padding
+        :param sp_emb_size: Embedding size of sparse features
+        :param padding_idx: Indices of padding in wide_ftrs_sp_idx. Recommend not to change it
         :param initializer: Weight initializer
         """
         wide_ftrs_sp_idx = tf.cast(wide_ftrs_sp_idx, dtype=tf.float32)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 PYTHONPATH=../.. python ../run_detext.py \
 --ftr_ext=cnn \
---feature_names=query,label,wide_ftrs,doc_title,wide_ftrs_sp_idx,wide_ftrs_sp_val \
+--feature_names=query,label,wide_ftrs,doc_title,usr_headline,wide_ftrs_sp_idx,wide_ftrs_sp_val \
 --emb_sim_func=inner \
 --elem_rescale=True \
 --learning_rate=0.001 \
