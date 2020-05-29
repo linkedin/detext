@@ -14,8 +14,34 @@ We show an example of the prepared training data and explain the data format and
     * For each training sample, there should be 1 query field.
     * eg. ["how do you del ##ete messages"]
 * `wide_ftrs` (float list) 
-    * There could be multiple wide features for each document. Therefore the wide features are really a 2-D array with shape [#documents, #wide features per document]. Since TFRecords support 1-D FloatList, we flatten the wide features in the preparation and transform to grouped features in `train/data_fn.py` by reshaping. Therefore the float list of wide_ftrs in the training data has `#documents * #wide features per document = 10 * 3 = 30` entries.
-    * [0.305 0.264 0.180 0.192 0.136 0.027 0.273 0.273 0.377 0.233 0.264 0.227 0.119 0.119 0.198 0.212 0.274 0.047 0.320 0.255 0.350 0.000 0.000 0.357 0.301 0.367 0.292 0.000 0.000 0.170]
+    * There could be multiple dense wide features for each document. Therefore the dense wide features are a 2-D array 
+    with shape [#documents, #dense wide features per document]. Since TFRecords support 1-D FloatList, we flatten the 
+    dense wide features in the preparation and transform to grouped features in `train/data_fn.py` by reshaping. 
+    Therefore the float list of wide_ftrs in the training data has `#documents * #dense wide features per document = 4 * 3 = 12` entries. 
+    The dense wide features belong to each document sequentially. I.e., the first 3 wide features belong to the first 
+    document, the second 3 wide features belong to the second document, etc..
+    * [0.305 0.264 0.180 0.192 0.136 0.027 0.273 0.273 0.377 0.233 0.264 0.227]
+* `wide_ftrs_sp_idx` (int list) 
+    * There could be multiple sparse wide features for each document. Therefore the sparse wide features indices are a 
+    2-D array with shape [#documents, #max num of sparse wide features among documents]. Since TFRecords support 1-D 
+    IntList, we flatten the sparse wide features indices in the preparation and transform to grouped features in 
+    `train/data_fn.py` by reshaping. Therefore the int list of wide_ftrs_sp_idx in the training data has 
+    `#sum_i(num documents in list i * #max sparse wide features in list i)` entries. 
+    Within the same list, if the number 
+    of sparse feature of document m is smaller than max number of sparse wide features in the list, the sparse feature 
+    indices must be padded with 0. An example below shows the wide_ftrs_sp_idx for a list where the maximum number 
+    of sparse wide features is 2 and the list has 4 documents. The sparse wide features belong to each document 
+    sequentially. I.e., the first 2 wide features belong to the first document, the second 2 wide features belong to 
+    the second document, etc.. 
+    Note that **0 should NEVER be used for wide_ftrs_sp_idx except for padding**.
+    * [3 2 5000 20 1 0 8 0]
+* `wide_ftrs_sp_val` (float list) 
+   * Sparse wide feature values are in the same shape and must be correspondent to as sparse wide feature indices. I.e., 
+   if the sparse feature indices of list i is [1, 5, 2], then the sparse feature values [-5.0, 12.0, 11.0] means that 
+   the sparse wide features for this list is [-5.0, 11.0, 0.0, 0.0, 12.0]. If this field is missing, values 
+   corresponding to sparse wide feature indices will be set to 1 by default. Values corresponding to padding values of 
+   sparse wide feature indices must be set to 0.
+   * [3 2 5000 20 1 0 8 0] 
 * `label` (float list)
     * The labels corresponding to each document. In our example, 0 for documents without any click and 1 for documents with clicks.
     * [0 0 1 0 0 0 0 0 0 0]
@@ -31,6 +57,8 @@ The following example (from [run_detext.sh](src/detext/resources/run_detext.sh))
 The train/dev/test datasets are prepared in the format mentioned in the previous section. More specifically, the following fields are used:
 * `query`
 * `wide_ftrs`
+* `wide_ftrs_sp_idx`
+* `wide_ftrs_sp_val`
 * `doc_titles`
 * `label`
 
@@ -80,15 +108,15 @@ A complete list of training parameters that DeText provides is given below. User
 | Network       | ftr_ext                  | str      | cnn, bert, lstm, lstm_lm                                                                 |                                        | NLP feature extraction module.                                                                                                                                                                          |
 |               | num_units                | int      |                                                                                          | 128                                    | word embedding size.                                                                                                                                                                                    |
 |               | num_units_for_id_ftr     | int      |                                                                                          | 128                                    | id feature embedding size.                                                                                                                                                                              |
-|               | num_usr_fields           | int      |                                                                                          | 0                                      | number of user fields.                                                                                                                                                                                  |
 |               | num_hidden               | str      |                                                                                          | 0                                      | hidden size. This could be a number or a list of comma separated numbers for multiple hidden layers.                                                                                                    |
 |               | num_wide                 | int      |                                                                                          | 0                                      | number of wide features per doc.                                                                                                                                                                        |
 |               | ltr_loss_fn              | str      |                                                                                          | pairwise                               | learning-to-rank method.                                                                                                                                                                                |
 |               | use_deep                 | str2bool |                                                                                          | TRUE                                   | Whether to use deep features.                                                                                                                                                                           |
 |               | elem_rescale             | str2bool |                                                                                          | TRUE                                   | Whether to perform elementwise rescaling.                                                                                                                                                               |
 |               | emb_sim_func             | str      |                                                                                          | inner                                  | The approach to compute query/doc similarity scores: inner/hadamard/concat or any combination of them separater by comma.                                                                               |
-|               | num_wide_sp              | int      |                                                                                          | None                                   | number of sparse wide features per doc                                                                                                                                                                  |
 |               | num_classes              | int      |                                                                                          | 1                                      | Number of classes for multi-class classification tasks. This should be set to the number of classes in the multiclass classification task.                                                              |
+| Sparse feature related              | num_wide_sp              | int      |                                                                                          | None                                   | maximum number of sparse wide features|
+|                                     | sp_emb_size              | int      |                                                                                          | 1                                      | embedding size of sparse wide features|
 |               |                          |          |                                                                                          |                                        |                                                                                                                                                                                                         |
 | CNN related   | filter_window_sizes      | str      |                                                                                          | "1,2,3"                                | CNN filter window sizes.                                                                                                                                                                                |
 |               | num_filters              | int      |                                                                                          | 100                                    | number of CNN filters.                                                                                                                                                                                  |
@@ -98,7 +126,7 @@ A complete list of training parameters that DeText provides is given below. User
 |               | bert_config_file         | str      |                                                                                          | None                                   | bert config.                                                                                                                                                                                            |
 |               | bert_checkpoint          | str      |                                                                                          | None                                   | pretrained bert model checkpoint.                                                                                                                                                                       |
 |               |                          |          |                                                                                          |                                        |                                                                                                                                                                                                         |
-| LSTM related  | unit_type                | str      | lstm,gru,layer_norm_lstm                                                                 | lstm                                   | RNN cell unit type. Support lstm/gru/layer_norm_lstm                                                                                                                                                    |
+| LSTM related  | unit_type                | str      | lstm                                                                                     | lstm                                                       | RNN cell unit type. Currently only supports lstm
 |               | num_layers               | int      |                                                                                          | 1                                      | RNN layers                                                                                                                                                                                              |
 |               | num_residual_layers      | int      |                                                                                          | 0                                      | Number of residual layers from top to bottom. For example, if `num_layers=4` and `num_residual_layers=2`, the last 2 RNN cells in the returned list will be wrapped with `ResidualWrapper`.             |
 |               | forget_bias              | float    |                                                                                          | 1                                      | Forget bias of RNN cell                                                                                                                                                                                 |

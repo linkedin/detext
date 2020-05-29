@@ -38,7 +38,8 @@ class SparseEmbModel:
                                                trainable=True)
 
             # A hack to combine idx and val so that we can process them together in `tf.map_fn` later
-            # Shape=[batch_size, max_group_size, max_wide_ftrs_size*2]
+            # Shape=[batch_size, max_group_size, max_wide_ftrs_sp_size*2], max_wide_ftrs_size is the maximum number of
+            #  sparse wide features in a document in the batch
             wide_ftrs_sp_idx_with_value = tf.concat([wide_ftrs_sp_idx, wide_ftrs_sp_val], axis=-1)
 
             # Compute embedding sample-wise
