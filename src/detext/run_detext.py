@@ -2,15 +2,14 @@
 Overall pipeline to train the model.  It parses arguments, and trains a DeText model.
 """
 
-import sys
 import argparse
 import logging
 import os
+import sys
 import time
 
 import tensorflow as tf
 import tensorflow_ranking as tfr
-
 from detext.train import train
 from detext.train.data_fn import input_fn
 from detext.utils import misc_utils, logger, executor_utils
@@ -24,6 +23,7 @@ def add_arguments(parser):
     parser.add_argument("--ftr_ext", choices=['cnn', 'bert', 'lstm_lm', 'lstm'], help="NLP feature extraction module.")
     parser.add_argument("--num_units", type=int, default=128, help="word embedding size.")
     parser.add_argument("--num_units_for_id_ftr", type=int, default=128, help="id feature embedding size.")
+    parser.add_argument("--sp_emb_size", type=int, default=1, help="Embedding size of sparse features")
     parser.add_argument("--num_hidden", type=str, default='0', help="hidden size.")
     parser.add_argument("--num_wide", type=int, default=0, help="number of wide features per doc.")
     parser.add_argument("--num_wide_sp", type=int, default=None, help="number of sparse wide features per doc")
@@ -174,6 +174,7 @@ def create_hparams(flags):
         ftr_ext=flags.ftr_ext,
         filter_window_sizes=flags.filter_window_sizes,
         num_units=flags.num_units,
+        sp_emb_size=flags.sp_emb_size,
         num_units_for_id_ftr=flags.num_units_for_id_ftr,
         num_filters=flags.num_filters,
         num_hidden=flags.num_hidden,

@@ -34,13 +34,13 @@ The DeText framework contains multiple components:
 
 **Word embedding layer**.  It converts the sequence of words into a d by n matrix.
 
-**CNN/BERT/LSTM for text embedding layer**.  It takes into the word embedding matrix as input, and maps the text data into a fixed length embedding.  It is worth noting that we adopt the representation based methods over the interaction based methods.  The main reason is the computational complexity: The time complexity of interaction based methods is at least O(mnd), which is one order higher than the representation based methods max(O(md), O(nd).
+**CNN/BERT/LSTM for text encoding layer**.  It takes into the word embedding matrix as input, and maps the text data into a fixed length embedding.  It is worth noting that we adopt the representation based methods over the interaction based methods.  The main reason is the computational complexity: The time complexity of interaction based methods is at least O(mnd), which is one order higher than the representation based methods max(O(md), O(nd).
 
 **Interaction layer**.  It generates deep features based on the text embeddings.  Many options are provided, such as concatenation, cosine similarity, etc.
 
-**Traditional Feature Processing**.  We combine the traditional features with the interaction features (deep features) in a wide & deep fashion.
+**Wide & Deep Feature Processing**.  We combine the traditional features with the interaction features (deep features) in a wide & deep fashion.
 
-**MLP layer**. The MLP layer is to combine traditional features and deep features. 
+**MLP layer**. The MLP layer is to combine wide features and deep features. 
 
 It is an end-to-end model where all the parameters are jointly updated to optimize the click probability.
 

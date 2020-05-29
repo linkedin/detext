@@ -15,7 +15,7 @@ setuptools.setup(
                  "Intended Audience :: Developers",
                  "License :: OSI Approved"],
     license='BSD-2-CLAUSE',
-    version='1.1.5',
+    version='1.2.0',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
