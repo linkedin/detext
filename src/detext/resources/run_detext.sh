@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 PYTHONPATH=../.. python ../run_detext.py \
 --ftr_ext=cnn \
---feature_names=query,label,wide_ftrs,doc_title \
+--feature_names=query,label,wide_ftrs,doc_title,wide_ftrs_sp_idx,wide_ftrs_sp_val \
 --emb_sim_func=inner \
 --elem_rescale=True \
 --learning_rate=0.001 \
@@ -13,7 +13,9 @@ PYTHONPATH=../.. python ../run_detext.py \
 --num_hidden=100 \
 --num_train_steps=10 \
 --num_units=32 \
---num_wide=10 \
+--num_wide=2 \
+--num_wide_sp=100 \
+--sp_emb_size=10 \
 --optimizer=bert_adam \
 --pmetric=ndcg@10 \
 --random_seed=11 \

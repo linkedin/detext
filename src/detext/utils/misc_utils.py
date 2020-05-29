@@ -1,11 +1,11 @@
 import codecs
 import json
-import numpy as np
 import os
 import pickle
 import random
-import tensorflow as tf
 
+import numpy as np
+import tensorflow as tf
 from detext.model.bert import modeling
 from detext.utils import test_utils
 from detext.utils import vocab_utils
@@ -167,7 +167,7 @@ def extend_hparams(hparams):
         task_ids = [int(x.strip()) for x in hparams.task_ids.split(',')]
         raw_weights = [float(x.strip()) for x in hparams.task_weights.split(',')] if hparams.task_weights is not None \
             else [1.0] * len(task_ids)
-        task_weights = [float(wt)/sum(raw_weights) for wt in raw_weights]  # Normalize task weights
+        task_weights = [float(wt) / sum(raw_weights) for wt in raw_weights]  # Normalize task weights
 
         # Check size of task_ids and task_weights
         assert len(task_ids) == len(task_weights), "size of task IDs and weights must match"
@@ -406,84 +406,52 @@ def estimate_train_steps(input_pattern, num_epochs, batch_size, isTfrecord):
     return num_train_steps
 
 
-if __name__ == '__main__':
-    # input_dir = '/home/wguo/projects/bert/people_v2/train_1m/'
-    # output_file = '/home/wguo/projects/bert/people_v2/mean_std.pkl'
-    # input_files = []
-    # for file in sorted(os.listdir(input_dir)):
-    #     input_files.append(os.path.join(input_dir, file))
-    #
-    # print(input_files[-2:])
+def _bytes_feature(value):
+    """Returns a bytes_list feature"""
+    if isinstance(value, type(tf.constant(0))):
+        value = value.numpy()  # BytesList won't unpack a string from an EagerTensor.
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
 
-    # input_files = [
-    #     '/home/wguo/data/people_v6/NAV/train/00000',
-    #     '/home/wguo/data/people_v6/NAV/train/00001',
-    #     '/home/wguo/data/people_v6/NAV/train/00002',
-    #     '/home/wguo/data/people_v6/NAV/train/00003',
-    #     '/home/wguo/data/people_v6/NAV/train/00004',
-    #     '/home/wguo/data/people_v6/NAV/train/00005',
-    #     '/home/wguo/data/people_v6/NAV/train/00006',
-    #     '/home/wguo/data/people_v6/NAV/train/00007',
-    # ]
-    # output_file = '/home/wguo/data/people_v6/NAV/mean_std.pkl'
-    # get_mean_std(input_files, output_file, 167)
-    # # shuffle_tfrecords(input_file, output_file)
-    # # random_baseline('/home/xwli/ranking/job-search-data/dev/gen-tfrecords/output1.tfrecords', 25)
-    #
-    # # for people search latency test
-    # input_file = ''
-    # output_file = ''
-    # field_names = ['wide_ftrs', 'doc_headlines', 'doc_currCompanies', 'doc_prevCompanies', 'doc_currTitles', 'doc_prevTitles', 'doc_schools']
-    # target_docs = 200
-    # generate_latency_test_data(input_file, output_file, field_names, target_docs)
 
-    # # for job search latency test
-    # input_file = '/home/wguo/projects/bert/job/dev.tfrecords'
-    # output_file = '/home/wguo/projects/bert/job/dev.fake'
-    # target_docs = 1000
-    # num_wide = 96
-    # field_names = ['wide_ftrs', 'doc_job_company', 'doc_job_title']
-    # generate_latency_test_data(input_file, output_file, field_names, target_docs, num_wide)
+def _float_feature(value):
+    """Returns a float_list feature"""
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
-    # random baseline
-    # input_files = [
-    #     '/home/wguo/data/people_v6/NAV/test/00000',
-    #     '/home/wguo/data/people_v6/NAV/test/00001',
-    #     '/home/wguo/data/people_v6/NAV/test/00002',
-    #     '/home/wguo/data/people_v6/NAV/test/00003',
-    #     '/home/wguo/data/people_v6/NAV/test/00004',
-    # ]
-    # random_baseline(input_files, 10)
 
-    # input_files = [
-    #     '/home/wguo/projects/bert/people_v4/00006',
-    #     # '/home/wguo/projects/bert/people_v4/00001',
-    # ]
-    # data_stats(input_files)
+def _int64_feature(value):
+    """Returns an int64_list feature"""
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
-    # for job search latency test
-    # input_file = '/tmp/jsdata/dev-00000.tfrecords'
-    # output_file = '/tmp/jsdata/dev-00000.tfrecords.1000'
-    # target_docs = 1000
-    # num_wide = 95
-    # field_names = ['wide_ftrs', 'doc_job_company', 'doc_job_title']
-    # generate_latency_test_data(input_file, output_file, field_names, target_docs, num_wide)
 
-    # for people search latency test
-    # input_file = '/home/xwli/ps-data/output-00000.tfrecords'
-    # output_file = '/home/xwli/ps-data/output-00000.tfrecords.200'
-    # target_docs = 200
-    # num_wide = 167
-    # field_names = ['wide_ftrs', 'doc_headlines', 'doc_currCompanies', 'doc_currTitles', 'doc_prevCompanies', 'doc_prevTitles']
-    # generate_latency_test_data(input_file, output_file, field_names, target_docs, num_wide)
+def create_sample_tfrecord(out_file):
+    """Creates sample tfrecord to out_file"""
+    print("Composing fake tfrecord to file {}".format(out_file))
+    with tf.io.TFRecordWriter(out_file) as writer:
+        with tf.Graph().as_default(), tf.compat.v1.Session():
+            # Example 1
+            features = {
+                "label": _float_feature(
+                    [1., 0., 0., 0.],
+                ),
+                "query": _bytes_feature([b"hello"]),
+                "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0, 22.0, 19.0]),
+                "doc_title": _bytes_feature([b"document title 1", b"title 2 ?", b"doc title 3 ?", b"doc title 4 ?"]),
+                "wide_ftrs_sp_idx": _int64_feature([1, 0, 2, 8]),
+                "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0, 12.0])
+            }
+            example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+            writer.write(example_proto.SerializeToString())
 
-    # sample 1 tfrecord
-    # input_file = '/tmp/psdata/L2/output-00003.tfrecords'
-    # output_file = '/tmp/psdata/L2/sample1.tfrecords'
-    # sample_tfrecords(input_file, 1, output_file)
-    input_file = '/tmp/psdata/L2/test/output-00000.tfrecords'
-    output_file = '/tmp/psdata/L2/query_embedding_samples.32d.test'
-    num_samples = 20
-    model_base_dir = '/home/xwli/models/ps-models/l2/expts_v2/ps-LiBERT-3-layer-32d-5df-100h-TrueDp-0.3TrainData-1'
-    query_embedding_model = model_base_dir + '/savedmodel_query_embedding_only'
-    generate_unit_test_query_embeddings(input_file, query_embedding_model, output_file, num_samples)
+            # Example 2
+            features = {
+                "label": _float_feature(
+                    [0., 0., 1.],
+                ),
+                "query": _bytes_feature([b"hello"]),
+                "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0]),
+                "doc_title": _bytes_feature([b"document title 1 linkedin", b"doc title 2 ?", b"doc title 3 ?"]),
+                "wide_ftrs_sp_idx": _int64_feature([8, 0, 2]),
+                "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0])
+            }
+            example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+            writer.write(example_proto.SerializeToString())

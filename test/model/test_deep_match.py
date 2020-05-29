@@ -146,7 +146,7 @@ class TestDeepMatch(tf.test.TestCase):
 
         Two conditions must be met when query is None:
         1. query_ftrs of model.text_encoding_model must be None
-        2. final_ftrs should only contain information about doc_ftrs and wide_ftrs
+        2. all_ftrs should only contain information about doc_ftrs and wide_ftrs
         """
         hparams = copy.copy(self.hparams)
         # ftr_ext = cnn
@@ -166,9 +166,9 @@ class TestDeepMatch(tf.test.TestCase):
                 sess.run(tf.global_variables_initializer())
                 wide_ftrs = wide_ftrs.eval()
 
-                # final_ftrs should only contain wide_ftrs and doc_fields
+                # all_ftrs should only contain wide_ftrs and doc_fields
                 doc_ftrs_size_after_cnn = len(doc_fields) * len(hparams.filter_window_sizes) * hparams.num_filters
-                self.assertAllEqual(dm.final_ftrs.eval().shape[-1],
+                self.assertAllEqual(dm.all_ftrs.eval().shape[-1],
                                     doc_ftrs_size_after_cnn + wide_ftrs.shape[-1] + len(doc_fields))
 
                 # query_ftrs of model.text_encoding_model must be None
@@ -230,8 +230,8 @@ class TestDeepMatch(tf.test.TestCase):
                 sess.run(tf.global_variables_initializer())
                 wide_ftrs = wide_ftrs.eval()
 
-                # final_ftrs should contain information about wide_ftrs user_fields and doc_fields
-                self.assertAllEqual(dm.final_ftrs.eval().shape[-1], (len(doc_fields) + len(usr_fields) + 1) * (
+                # all_ftrs should contain information about wide_ftrs user_fields and doc_fields
+                self.assertAllEqual(dm.all_ftrs.eval().shape[-1], (len(doc_fields) + len(usr_fields) + 1) * (
                     dm.deep_ftr_model.ftr_size + int(hparams.explicit_empty)) + wide_ftrs.shape[-1])
 
     def testDeepMatchWithIdField(self):
@@ -271,8 +271,8 @@ class TestDeepMatch(tf.test.TestCase):
                 concat_ftr_size = (len(doc_fields) + len(usr_fields) + 1) * (ftr_size + int(hparams.explicit_empty)) + \
                                   (len(usr_id_fields) + len(doc_id_fields)) * ftr_size
                 inner_ftr_size = (len(usr_fields) + len(usr_id_fields) + 1) * (len(doc_fields) + len(doc_id_fields))
-                # final_ftrs should contain information about wide_ftrs user_fields and doc_fields
-                self.assertAllEqual(dm.final_ftrs.eval().shape[-1],
+                # all_ftrs should contain information about wide_ftrs user_fields and doc_fields
+                self.assertAllEqual(dm.all_ftrs.eval().shape[-1],
                                     concat_ftr_size + inner_ftr_size + wide_ftrs.shape[-1])
 
     def testComputeSim(self):

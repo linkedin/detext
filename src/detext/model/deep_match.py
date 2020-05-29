@@ -4,7 +4,7 @@ The deep match model.
 import tensorflow as tf
 
 from detext.model import rep_model
-from detext.model.sp_linear_model import SparseLinearModel
+from detext.model.sp_emb_model import SparseEmbModel
 
 
 class DeepMatch:
@@ -68,7 +68,8 @@ class DeepMatch:
                 mode=self._mode
             )
 
-        self.scores = self.compute_total_scores()  # score(wide&deep) + score(wide_sp)
+        self.all_ftrs = self.compute_all_ftrs()
+        self.scores = self.compute_scores(self.all_ftrs)
         self.original_scores = self.scores
         if self._mode == tf.estimator.ModeKeys.PREDICT and hparams.num_classes <= 1:
             # final_scores is transposed for ranking tasks
@@ -93,28 +94,59 @@ class DeepMatch:
         data_shape = tf.shape(data)
         return data_shape[0], data_shape[1]
 
-    def compute_total_scores(self):
+    def compute_scores(self, all_ftrs):
         """Computes total scores """
-        scores = 0.
         hparams = self._hparams
-        if hparams.use_deep or self._wide_ftrs is not None:
-            scores += self.compute_score()
-        if self._wide_ftrs_sp_idx is not None:
-            linear_model, wide_sp_scores = self.compute_sp_wide_score()
-            scores += wide_sp_scores
+
+        # mlp and score layers
+        if hparams.task_ids is not None:
+            # derive individual task score shape
+            score_shape = [self.batch_size, tf.maximum(self.max_group_size, hparams.num_classes)]
+            scores = tf.zeros(shape=score_shape, dtype="float32")
+            for task_id in hparams.task_ids:
+                task_score = self.add_mlp_and_score_layers(
+                    input_layer=all_ftrs,
+                    prefix='task_' + str(task_id) + '_'
+                )
+
+                # use task_mask to zero out other tasks' score
+                task_mask = tf.cast(tf.equal(self._task_id_field, int(task_id)), dtype=tf.float32)
+                # broadcast task_mask for compatible tensor shape with scores tensor
+                task_mask = tf.transpose(tf.broadcast_to(task_mask, score_shape[::-1]))
+                scores += task_mask * task_score
+        else:
+            scores = self.add_mlp_and_score_layers(all_ftrs)
+
         return scores
 
-    def compute_sp_wide_score(self):
-        """Computes linear score from wide sparse features"""
-        linear_model = SparseLinearModel(wide_ftrs_sp_idx=self._wide_ftrs_sp_idx,
-                                         num_wide_sp=self._hparams.num_wide_sp,
-                                         wide_ftrs_sp_val=self._wide_ftrs_sp_val)
-        return linear_model, linear_model.score
+    def compute_sp_ftrs(self):
+        """Computes feature embedding from wide sparse features"""
+        sp_emb_model = SparseEmbModel(wide_ftrs_sp_idx=self._wide_ftrs_sp_idx,
+                                      num_wide_sp=self._hparams.num_wide_sp,
+                                      wide_ftrs_sp_val=self._wide_ftrs_sp_val,
+                                      sp_emb_size=self._hparams.sp_emb_size
+                                      )
+        return sp_emb_model, sp_emb_model.embedding
 
-    def compute_score(self):
+    def compute_all_ftrs(self):
         """
-        Compute the score for a query/doc pair based on dense features and deep features
-        :return Tensor  Matching score. Shape=[batch_size, max_group_size]
+        Concatenates deep features, dense wide features and sparse wide feature embeddings
+        """
+        all_ftrs = []
+        hparams = self._hparams
+        if hparams.use_deep or self._wide_ftrs is not None:
+            dense_ftrs = self.compute_dense_ftrs()
+            all_ftrs.append(dense_ftrs)
+        if self._wide_ftrs_sp_idx is not None:
+            _, sp_embedding = self.compute_sp_ftrs()
+            all_ftrs.append(sp_embedding)
+        all_ftrs = tf.concat(all_ftrs, axis=-1)
+        return all_ftrs
+
+    def compute_dense_ftrs(self):
+        """
+        Computes the dense features based on dense features and deep features
+        :return Tensor  Dense features. Shape=[batch_size, max_group_size, deep_ftr_size + dense_wide_ftr_size]
         """
         hparams = self._hparams
         batch_size = self.batch_size
@@ -140,53 +172,32 @@ class DeepMatch:
             self._wide_ftrs = tf.tanh(self._wide_ftrs * self.elem_norm_w + self.elem_norm_b)
 
         emb_size = 0
-        final_ftrs = []
+        dense_ftrs = []
 
         # whether to include deep features
         if hparams.use_deep:
-            final_ftrs.append(sim_ftrs)
+            dense_ftrs.append(sim_ftrs)
             emb_size += num_sim_ftrs
 
         # whether to include wide features
         if self._wide_ftrs is not None:
-            final_ftrs.append(self._wide_ftrs)
+            dense_ftrs.append(self._wide_ftrs)
             emb_size += hparams.num_wide
 
         # add whether empty
         if hparams.explicit_empty:
             ftrs, size = self.add_empty_str_ftr(max_group_size)
-            final_ftrs += ftrs
+            dense_ftrs += ftrs
             emb_size += size
 
         # reshape
-        final_ftrs = tf.concat(final_ftrs, axis=-1)
-
-        self.final_ftrs = tf.reshape(final_ftrs, shape=[batch_size, max_group_size, emb_size])
-
-        # mlp and score layers
-        if hparams.task_ids is not None:
-            # derive individual task score shape
-            score_shape = [batch_size, tf.maximum(max_group_size, hparams.num_classes)]
-            scores = tf.zeros(shape=score_shape, dtype="float32")
-            for task_id in hparams.task_ids:
-                task_score = self.add_mlp_and_score_layers(
-                    input_layer=self.final_ftrs,
-                    prefix='task_' + str(task_id) + '_'
-                )
-
-                # use task_mask to zero out other tasks' score
-                task_mask = tf.cast(tf.equal(self._task_id_field, int(task_id)), dtype=tf.float32)
-                # broadcast task_mask for compatible tensor shape with scores tensor
-                task_mask = tf.transpose(tf.broadcast_to(task_mask, score_shape[::-1]))
-                scores += task_mask * task_score
-        else:
-            scores = self.add_mlp_and_score_layers(self.final_ftrs)
-
-        return scores
+        dense_ftrs = tf.concat(dense_ftrs, axis=-1)
+        dense_ftrs = tf.reshape(dense_ftrs, shape=[batch_size, max_group_size, emb_size])
+        return dense_ftrs
 
     def add_empty_str_ftr(self, max_group_size):
         """
-        Add whether-the-string-is-empty features into final_ftrs.
+        Add whether-the-string-is-empty features into dense_ftrs.
         """
         num_ftrs = 0
         all_ftrs = []
