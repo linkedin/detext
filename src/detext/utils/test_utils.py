@@ -3,7 +3,9 @@ A lot of non-tensorflow implementation.  This is mainly used for testing.
 """
 import argparse
 import math
+
 import numpy as np
+import tensorflow as tf
 
 
 def neg_log_sigmoid(x):
@@ -156,3 +158,54 @@ def get_params(argv):
     for k, v in sorted(vars(hparams).items()):
         print('--' + k + '=' + str(v))
     return hparams
+
+
+def create_sample_tfrecord(out_file):
+    """Creates sample tfrecord to out_file"""
+    print("Composing fake tfrecord to file {}".format(out_file))
+    with tf.io.TFRecordWriter(out_file) as writer:
+        with tf.Graph().as_default(), tf.compat.v1.Session():
+            # Example 1
+            features = {
+                "label": _float_feature(
+                    [1., 0., 0., 0.],
+                ),
+                "query": _bytes_feature([b"hello"]),
+                "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0, 22.0, 19.0]),
+                "doc_title": _bytes_feature([b"document title 1", b"title 2 ?", b"doc title 3 ?", b"doc title 4 ?"]),
+                "wide_ftrs_sp_idx": _int64_feature([1, 0, 2, 8]),
+                "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0, 12.0])
+            }
+            example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+            writer.write(example_proto.SerializeToString())
+
+            # Example 2
+            features = {
+                "label": _float_feature(
+                    [0., 0., 1.],
+                ),
+                "query": _bytes_feature([b"hello"]),
+                "wide_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0]),
+                "doc_title": _bytes_feature([b"document title 1 linkedin", b"doc title 2 ?", b"doc title 3 ?"]),
+                "wide_ftrs_sp_idx": _int64_feature([8, 0, 2]),
+                "wide_ftrs_sp_val": _float_feature([1.0, 0.0, 7.0])
+            }
+            example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+            writer.write(example_proto.SerializeToString())
+
+
+def _bytes_feature(value):
+    """Returns a bytes_list feature"""
+    if isinstance(value, type(tf.constant(0))):
+        value = value.numpy()  # BytesList won't unpack a string from an EagerTensor.
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
+
+
+def _float_feature(value):
+    """Returns a float_list feature"""
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+
+
+def _int64_feature(value):
+    """Returns an int64_list feature"""
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
