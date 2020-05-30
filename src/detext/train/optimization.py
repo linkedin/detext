@@ -75,10 +75,12 @@ def create_optimizer(hparams, loss):
             'bert_adam': AdamWeightDecayOptimizer,
             'bert_lamb': LAMBOptimizer
         }
+        optimizer_func = name_2_optimizer[hparams.optimizer]
+
         # It is recommended that you use this optimizer for fine tuning, since this
         # is how the model was trained (note that the Adam/Lamb m/v variables are NOT
         # loaded from init_checkpoint.)
-        optimizer = name_2_optimizer[hparams.optimizer](
+        optimizer = optimizer_func(
             learning_rate=learning_rate,
             weight_decay_rate=0.01,
             beta_1=0.9,
@@ -110,7 +112,7 @@ def create_optimizer(hparams, loss):
             train_op = tf.group(train_op, [global_step.assign(new_global_step)])
         else:
             # the BERT components will use another learning rate
-            optimizer_bert = name_2_optimizer[hparams.optimizer](
+            optimizer_bert = optimizer_func(
                 learning_rate=learning_rate * lr_bert / init_lr,
                 weight_decay_rate=0.01,
                 beta_1=0.9,
@@ -252,8 +254,10 @@ class LAMBOptimizer(tf.train.Optimizer):
     See paper [Large Batch Optimization for Deep Learning: Training BERT
         in 76 minutes](https://arxiv.org/abs/1904.00962).
     Official implementation from tensorflow addon tensorflow_addons/optimizers/lamb.py
+
     Note that we does not apply adam bias correction for the moments estimates to keep it similar to the original AdamW
-    optimizer in BERT pretraining.
+    optimizer in BERT pretraining (which is the AdamWeightDecayOptimizer here). The only difference for the
+    LAMBOptimizer compared to AdamWeightDecayOptimizer implementation is the added layer adaptation.
     """
 
     def __init__(self,
