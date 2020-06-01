@@ -75,12 +75,12 @@ def create_optimizer(hparams, loss):
             'bert_adam': AdamWeightDecayOptimizer,
             'bert_lamb': LAMBOptimizer
         }
-        optimizer_func = name_2_optimizer[hparams.optimizer]
+        OptimizerFunc = name_2_optimizer[hparams.optimizer]
 
         # It is recommended that you use this optimizer for fine tuning, since this
         # is how the model was trained (note that the Adam/Lamb m/v variables are NOT
         # loaded from init_checkpoint.)
-        optimizer = optimizer_func(
+        optimizer = OptimizerFunc(
             learning_rate=learning_rate,
             weight_decay_rate=0.01,
             beta_1=0.9,
@@ -112,7 +112,7 @@ def create_optimizer(hparams, loss):
             train_op = tf.group(train_op, [global_step.assign(new_global_step)])
         else:
             # the BERT components will use another learning rate
-            optimizer_bert = optimizer_func(
+            optimizer_bert = OptimizerFunc(
                 learning_rate=learning_rate * lr_bert / init_lr,
                 weight_decay_rate=0.01,
                 beta_1=0.9,
