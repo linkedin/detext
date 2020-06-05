@@ -245,7 +245,7 @@ class DeepMatch:
                 units=hidden_size,
                 use_bias=True,
                 activation=tf.tanh,
-                name=prefix + "hidden_projection_" + str(i))
+                name=f'{prefix}hidden_projection_{str(i)}')
 
         # final score for query/doc pairs
         scores = tf.layers.dense(
@@ -253,7 +253,7 @@ class DeepMatch:
             units=hparams.num_classes,
             use_bias=True,
             activation=None,
-            name=prefix + "scoring")
+            name=f'{prefix}scoring')
 
         if hparams.num_classes <= 1:
             scores = tf.squeeze(scores, axis=-1)  # shape=[batch_size, max_group_size]

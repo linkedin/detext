@@ -2,267 +2,154 @@
 Overall pipeline to train the model.  It parses arguments, and trains a DeText model.
 """
 
-import argparse
 import logging
 import os
 import sys
 import time
+from typing import NamedTuple, List
 
 import tensorflow as tf
 import tensorflow_ranking as tfr
+from arg_suite.arg_suite import arg_suite
 from detext.train import train
 from detext.train.data_fn import input_fn
 from detext.utils import misc_utils, logger, executor_utils
 
 
-def add_arguments(parser):
-    """Build ArgumentParser."""
-    parser.register("type", "bool", lambda v: v.lower() == "true")
-
+@arg_suite
+class Args(NamedTuple):
+    """
+    DeText: a Deep Text understanding framework for NLP related ranking, classification, and language generation tasks.
+    It leverages semantic matching using deep neural networks to
+    understand member intents in search and recommender systems.
+    As a general NLP framework, currently DeText can be applied to many tasks,
+    including search & recommendation ranking, multi-class classification and query understanding tasks.
+    """
+    #  kwargs utility funcation for split a str to a List, provided for backward compatibilities
+    #  Please use built-in List parsing support when adding new arguments
+    __comma_split_list = lambda t: {'type': lambda s: [t(item) for item in s.split(',')] if ',' in s else t(s), 'nargs': None}  # noqa: E731
     # network
-    parser.add_argument("--ftr_ext", choices=['cnn', 'bert', 'lstm_lm', 'lstm'], help="NLP feature extraction module.")
-    parser.add_argument("--num_units", type=int, default=128, help="word embedding size.")
-    parser.add_argument("--num_units_for_id_ftr", type=int, default=128, help="id feature embedding size.")
-    parser.add_argument("--sp_emb_size", type=int, default=1, help="Embedding size of sparse features")
-    parser.add_argument("--num_hidden", type=str, default='0', help="hidden size.")
-    parser.add_argument("--num_wide", type=int, default=0, help="number of wide features per doc.")
-    parser.add_argument("--num_wide_sp", type=int, default=None, help="number of sparse wide features per doc")
-    parser.add_argument("--use_deep", type=str2bool, default=True, help="Whether to use deep features.")
-    parser.add_argument("--elem_rescale", type=str2bool, default=True,
-                        help="Whether to perform elementwise rescaling.")
-    parser.add_argument("--use_doc_projection", type=str2bool, default=False,
-                        help="whether to project multiple doc features to 1 vector.")
-    parser.add_argument("--use_usr_projection", type=str2bool, default=False,
-                        help="whether to project multiple usr features to 1 vector.")
+    ftr_ext: str  # NLP feature extraction module.
+    _ftr_ext = {'choices': ['cnn', 'bert', 'lstm_lm', 'lstm']}
+    num_units: int = 128  # word embedding size.
+    num_units_for_id_ftr: int = 128  # id feature embedding size.
+    sp_emb_size: int = 1  # Embedding size of sparse features
+    num_hidden: List[int] = 0  # hidden size.
+    num_wide: int = 0  # number of wide features per doc.
+    num_wide_sp: int = None  # number of sparse wide features per doc
+    use_deep: bool = True  # Whether to use deep features.
+    _use_deep = {'type': lambda s: True if s.lower() == 'true' else False if s.lower() == 'false' else s}
+    elem_rescale: bool = True  # Whether to perform elementwise rescaling.
+    use_doc_projection: bool = False  # whether to project multiple doc features to 1 vector.
+    use_usr_projection: bool = False  # whether to project multiple usr features to 1 vector.
 
     # Ranking specific
-    parser.add_argument("--ltr_loss_fn", type=str, default='pairwise', help="learning-to-rank method.")
-    parser.add_argument("--emb_sim_func", default='inner',
-                        help="Approach to computing query/doc similarity scores: "
-                             "inner/hadamard/concat or any combination of them separated by comma.")
+    ltr_loss_fn: str = 'pairwise'  # learning-to-rank method.
+    emb_sim_func: List[str] = ['inner']  # Approach to computing query/doc similarity scores
+    _emb_sim_func = {"choices": ('inner', 'hadamard', 'concat')}
 
     # Classification specific
-    parser.add_argument("--num_classes", type=int, default=1,
-                        help="Number of classes for multi-class classification tasks.")
+    num_classes: int = 1  # Number of classes for multi-class classification tasks.
 
     # CNN related
-    parser.add_argument("--filter_window_sizes", type=str, default='3', help="CNN filter window sizes.")
-    parser.add_argument("--num_filters", type=int, default=100, help="number of CNN filters.")
-    parser.add_argument("--explicit_empty", type=str2bool, default=False,
-                        help="Explicitly modeling empty string in cnn")
+    filter_window_sizes: List[int] = 3  # CNN filter window sizes.
+    num_filters: int = 100  # number of CNN filters.
+    explicit_empty: bool = False  # Explicitly modeling empty string in cnn
 
     # BERT related
-    parser.add_argument("--lr_bert", type=float, default=None, help="Learning rate factor for bert components")
-    parser.add_argument("--bert_config_file", type=str, default=None, help="bert config.")
-    parser.add_argument("--bert_checkpoint", type=str, default=None, help="pretrained bert model checkpoint.")
+    lr_bert: float = None  # Learning rate factor for bert components
+    bert_config_file: str = None  # bert config.
+    bert_checkpoint: str = None  # pretrained bert model checkpoint.
 
     # LSTM related
-    parser.add_argument("--unit_type", type=str, default="lstm", choices=["lstm"],
-                        help="RNN cell unit type. Currently only supports lstm. Will support other cell types in the future")
-    parser.add_argument("--num_layers", type=int, default=1, help="RNN layers")
-    parser.add_argument("--num_residual_layers", type=int, default=0,
-                        help="Number of residual layers from top to bottom. For example, if `num_layers=4` and "
-                             "`num_residual_layers=2`, the last 2 RNN cells in the returned list will be wrapped "
-                             "with `ResidualWrapper`.")
-    parser.add_argument("--forget_bias", type=float, default=1., help="Forget bias of RNN cell")
-    parser.add_argument("--rnn_dropout", type=float, default=0., help="Dropout of RNN cell")
-    parser.add_argument("--bidirectional", type=str2bool, default=False, help="Whether to use bidirectional RNN")
-    parser.add_argument("--normalized_lm", type=str2bool, default=False,
-                        help="Whether to use normalized lm. This option only works for unit_type=lstm_lm")
+    unit_type: str = 'lstm'  # RNN cell unit type. Currently only supports lstm. Will support other cell types in the future
+    _unit_type = {'choices': ['lstm']}
+    num_layers: int = 1  # RNN layers
+    num_residual_layers: int = 0  # Number of residual layers from top to bottom. For example, if `num_layers=4` and `num_residual_layers=2`, the last 2 RNN cells in the returned list will be wrapped with `ResidualWrapper`. # noqa: E501
+    forget_bias: float = 1.  # Forget bias of RNN cell
+    rnn_dropout: float = 0.  # Dropout of RNN cell
+    bidirectional: bool = False  # Whether to use bidirectional RNN
+    normalized_lm: bool = False  # Whether to use normalized lm. This option only works for unit_type=lstm_lm
 
     # Optimizer
-    parser.add_argument("--optimizer", type=str, choices=["sgd", "adam", "bert_adam", "bert_lamb"], default="sgd",
-                        help="Type of optimizer to use. bert_adam is similar to the optimizer implementation in bert.")
-    parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Clip gradients to this norm.")
-    parser.add_argument("--learning_rate", type=float, default=1.0, help="Learning rate. Adam: 0.001 | 0.0001")
-    parser.add_argument("--num_train_steps", type=int, default=1, help="Num steps to train.")
-    parser.add_argument("--num_epochs", type=int, default=None,
-                        help="Num of epochs to train, will overwrite train_steps if set")
-    parser.add_argument("--num_warmup_steps", type=int, default=0, help="Num steps for warmup.")
-    parser.add_argument("--train_batch_size", type=int, default=32, help="Training data batch size.")
-    parser.add_argument("--test_batch_size", type=int, default=32, help="Test data batch size.")
-    parser.add_argument("--l1", type=float, default=None, help="Scale of L1 regularization")
-    parser.add_argument("--l2", type=float, default=None, help="Scale of L2 regularization")
+    optimizer: str = 'sgd'  # Type of optimizer to use. bert_adam is similar to the optimizer implementation in bert.
+    _optimizer = {'choices': ['sgd', 'adam', 'bert_adam', 'bert_lamb']}
+    max_gradient_norm: float = 1.0  # Clip gradients to this norm.
+    learning_rate: float = 1.0  # Learning rate. Adam: 0.001 | 0.0001
+    num_train_steps: int = 1  # Num steps to train.
+    num_epochs: int = None  # Num of epochs to train, will overwrite train_steps if set
+    num_warmup_steps: int = 0  # Num steps for warmup.
+    train_batch_size: int = 32  # Training data batch size.
+    test_batch_size: int = 32  # Test data batch size.
+    l1: float = None  # Scale of L1 regularization
+    l2: float = None  # Scale of L2 regularization
 
     # Data
-    parser.add_argument("--train_file", type=str, default=None, help="Train file.")
-    parser.add_argument("--dev_file", type=str, default=None, help="Dev file.")
-    parser.add_argument("--test_file", type=str, default=None, help="Test file.")
-    parser.add_argument("--out_dir", type=str, default=None, help="Store log/model files.")
-    parser.add_argument("--std_file", type=str, default=None, help="feature standardization file")
-    parser.add_argument("--max_len", type=int, default=32, help="max sent length.")
-    parser.add_argument("--min_len", type=int, default=3, help="min sent length.")
+    train_file: str = None  # Train file.
+    dev_file: str = None  # Dev file.
+    test_file: str = None  # Test file.
+    out_dir: str = None  # Store log/model files.
+    std_file: str = None  # feature standardization file
+    max_len: int = 32  # max sent length.
+    min_len: int = 3  # min sent length.
 
     # Vocab and word embedding
-    parser.add_argument("--vocab_file", type=str, default=None, help="Vocab file")
-    parser.add_argument("--we_file", type=str, default=None, help="Pretrained word embedding file")
-    parser.add_argument("--we_trainable", type=str2bool, default=True, help="Whether to train word embedding")
-    parser.add_argument("--PAD", type=str, default="[PAD]", help="Token for padding")
-    parser.add_argument("--SEP", type=str, default="[SEP]", help="Token for sentence separation")
-    parser.add_argument("--CLS", type=str, default="[CLS]", help="Token for start of sentence")
-    parser.add_argument("--UNK", type=str, default="[UNK]", help="Token for unknown word")
-    parser.add_argument("--MASK", type=str, default="[MASK]", help="Token for masked word")
+    vocab_file: str = None  # Vocab file
+    we_file: str = None  # Pretrained word embedding file
+    we_trainable: bool = True  # Whether to train word embedding
+    PAD: str = '[PAD]'  # Token for padding
+    SEP: str = '[SEP]'  # Token for sentence separation
+    CLS: str = '[CLS]'  # Token for start of sentence
+    UNK: str = '[UNK]'  # Token for unknown word
+    MASK: str = '[MASK]'  # Token for masked word
 
     # Vocab and word embedding for id features
-    parser.add_argument("--vocab_file_for_id_ftr", type=str, default=None, help="Vocab file for id features")
-    parser.add_argument("--we_file_for_id_ftr", type=str, default=None,
-                        help="Pretrained word embedding file for id features")
-    parser.add_argument("--we_trainable_for_id_ftr", type=str2bool, default=True,
-                        help="Whether to train word embedding for id features")
-    parser.add_argument("--PAD_FOR_ID_FTR", type=str, default="[PAD]", help="Padding token for id features")
-    parser.add_argument("--UNK_FOR_ID_FTR", type=str, default="[UNK]", help="Unknown word token for id features")
+    vocab_file_for_id_ftr: str = None  # Vocab file for id features
+    we_file_for_id_ftr: str = None  # Pretrained word embedding file for id features
+    we_trainable_for_id_ftr: bool = True  # Whether to train word embedding for id features
+    PAD_FOR_ID_FTR: str = '[PAD]'  # Padding token for id features
+    UNK_FOR_ID_FTR: str = '[UNK]'  # Unknown word token for id features
 
     # Misc
-    parser.add_argument("--random_seed", type=int, default=1234, help="Random seed (>0, set a specific seed).")
-    parser.add_argument("--steps_per_stats", type=int, default=100, help="training steps to print statistics.")
-    parser.add_argument("--num_eval_rounds", type=int, default=None, help="number of evaluation round,this param will "
-                                                                          "override steps_per_eval as max(1,"
-                                                                          "num_train_steps / num_eval_rounds)")
-    parser.add_argument("--steps_per_eval", type=int, default=1000, help="training steps to evaluate datasets.")
-    parser.add_argument("--keep_checkpoint_max", type=int, default=5,
-                        help="The maximum number of recent checkpoint files to keep. If 0, all checkpoint "
-                             "files are kept. Defaults to 5")
-    parser.add_argument("--feature_names", type=str, default=None, help="the feature names.")
-    parser.add_argument("--lambda_metric", type=str, default=None, help="only support ndcg.")
-    parser.add_argument("--init_weight", type=float, default=0.1, help="weight initialization value.")
-    parser.add_argument("--pmetric", type=str, default=None, help="Primary metric.")
-    parser.add_argument("--all_metrics", type=str, default=None, help="All metrics.")
-    parser.add_argument("--score_rescale", type=str, default=None, help="The mean and std of previous model.")
-    parser.add_argument("--tokenization", type=str, default='punct', choices=['plain', 'punct'],
-                        help="The tokenzation performed for data preprocessing. "
-                             "Currently support: punct/plain(no split). "
-                             "Note that this should be set correctly to ensure consistency for savedmodel.")
+    random_seed: int = 1234  # Random seed (>0, set a specific seed).
+    steps_per_stats: int = 100  # training steps to print statistics.
+    num_eval_rounds: int = None  # number of evaluation round, this param will override steps_per_eval as max(1, num_train_steps / num_eval_rounds)
+    steps_per_eval: int = 1000  # training steps to evaluate datasets.
+    keep_checkpoint_max: int = 5  # The maximum number of recent checkpoint files to keep. If 0, all checkpoint files are kept. Defaults to 5
+    feature_names: List[str] = None  # the feature names.
+    _feature_names = __comma_split_list(str)
+    lambda_metric: str = None  # only support ndcg.
+    init_weight: float = 0.1  # weight initialization value.
+    pmetric: str = None  # Primary metric.
+    all_metrics: List[str] = None  # All metrics.
+    score_rescale: List[float] = None  # The mean and std of previous model. For score rescaling, the score_rescale has the xgboost mean and std.
 
-    parser.add_argument("--resume_training", type=str2bool, default=False,
-                        help="Whether to resume training from checkpoint in out_dir.")
-    parser.add_argument("--metadata_path", type=str, default=None,
-                        help="The metadata_path for converted avro2tf avro data.")
+    tokenization: str = 'punct'  # The tokenzation performed for data preprocessing. Currently support: punct/plain(no split). Note that this should be set correctly to ensure consistency for savedmodel.# noqa: E501
+    _tokenization = {'choices': ['plain', 'punct']}
+
+    resume_training: bool = False  # Whether to resume training from checkpoint in out_dir.
+    metadata_path: str = None  # The metadata_path for converted avro2tf avro data.
 
     # tf-ranking related
-    parser.add_argument("--use_tfr_loss", type=str2bool, default=False, help="whether to use tf-ranking loss.")
-    parser.add_argument('--tfr_loss_fn',
-                        choices=[
-                            tfr.losses.RankingLossKey.SOFTMAX_LOSS,
-                            tfr.losses.RankingLossKey.PAIRWISE_LOGISTIC_LOSS],
-                        default=tfr.losses.RankingLossKey.SOFTMAX_LOSS,
-                        help="softmax_loss")
-    parser.add_argument('--tfr_lambda_weights', type=str, default=None)
+    use_tfr_loss: bool = False  # whether to use tf-ranking loss.
+    tfr_loss_fn: str = tfr.losses.RankingLossKey.SOFTMAX_LOSS  # tf-ranking loss
+    _tfr_loss_fn = {'choices': [tfr.losses.RankingLossKey.SOFTMAX_LOSS, tfr.losses.RankingLossKey.PAIRWISE_LOGISTIC_LOSS]}
+    tfr_lambda_weights: str = None  #
 
-    parser.add_argument('--use_horovod', type=str2bool, default=False,
-                        help="whether to use horovod for sync distributed training")
+    use_horovod: bool = False  # whether to use horovod for sync distributed training
 
     # multitask training related
-    parser.add_argument('--task_ids', type=str, default=None,
-                        help="All types of task IDs for multitask training. E.g., 1,2,3")
-    parser.add_argument('--task_weights', type=str, default=None,
-                        help="Weights for each task specified in task_ids. E.g., 0.5,0.3,0.2")
+    task_ids: List[int] = None  # All types of task IDs for multitask training. E.g., 1,2,3
+    _task_ids = __comma_split_list(int)
+    task_weights: List[float] = None  # Weights for each task specified in task_ids. E.g., 0.5,0.3,0.2
+    _task_weights = __comma_split_list(float)
 
 
-def str2bool(v):
-    if v.lower() in ('true', '1'):
-        return True
-    elif v.lower() in ('false', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-def create_hparams(flags):
-    """Create training hparams."""
-    return tf.contrib.training.HParams(
-        # Data
-        ftr_ext=flags.ftr_ext,
-        filter_window_sizes=flags.filter_window_sizes,
-        num_units=flags.num_units,
-        sp_emb_size=flags.sp_emb_size,
-        num_units_for_id_ftr=flags.num_units_for_id_ftr,
-        num_filters=flags.num_filters,
-        num_hidden=flags.num_hidden,
-        num_wide=flags.num_wide,
-        ltr_loss_fn=flags.ltr_loss_fn,
-        use_deep=flags.use_deep,
-        elem_rescale=flags.elem_rescale,
-        emb_sim_func=flags.emb_sim_func,
-        use_doc_projection=flags.use_doc_projection,
-        use_usr_projection=flags.use_usr_projection,
-        num_classes=flags.num_classes,
-        optimizer=flags.optimizer,
-        max_gradient_norm=flags.max_gradient_norm,
-        learning_rate=flags.learning_rate,
-        lr_bert=flags.lr_bert,
-        num_train_steps=flags.num_train_steps,
-        num_epochs=flags.num_epochs,
-        num_warmup_steps=flags.num_warmup_steps,
-        train_batch_size=flags.train_batch_size,
-        test_batch_size=flags.test_batch_size,
-        train_file=flags.train_file,
-        dev_file=flags.dev_file,
-        test_file=flags.test_file,
-        out_dir=flags.out_dir,
-        vocab_file=flags.vocab_file,
-        we_file=flags.we_file,
-        we_trainable=flags.we_trainable,
-        random_seed=flags.random_seed,
-        steps_per_stats=flags.steps_per_stats,
-        steps_per_eval=flags.steps_per_eval,
-        num_eval_rounds=flags.num_eval_rounds,
-        keep_checkpoint_max=flags.keep_checkpoint_max,
-        max_len=flags.max_len,
-        min_len=flags.min_len,
-        feature_names=flags.feature_names,
-        lambda_metric=flags.lambda_metric,
-        bert_config_file=flags.bert_config_file,
-        bert_checkpoint=flags.bert_checkpoint,
-        init_weight=flags.init_weight,
-        pmetric=flags.pmetric,
-        std_file=flags.std_file,
-        num_wide_sp=flags.num_wide_sp,
-        all_metrics=flags.all_metrics,
-        score_rescale=flags.score_rescale,
-        explicit_empty=flags.explicit_empty,
-        tokenization=flags.tokenization,
-        unit_type=flags.unit_type,
-        num_layers=flags.num_layers,
-        num_residual_layers=flags.num_residual_layers,
-        forget_bias=flags.forget_bias,
-        rnn_dropout=flags.rnn_dropout,
-        bidirectional=flags.bidirectional,
-        PAD=flags.PAD,
-        SEP=flags.SEP,
-        CLS=flags.CLS,
-        UNK=flags.UNK,
-        MASK=flags.MASK,
-        resume_training=flags.resume_training,
-        metadata_path=flags.metadata_path,
-        tfr_loss_fn=flags.tfr_loss_fn,
-        tfr_lambda_weights=flags.tfr_lambda_weights,
-        use_tfr_loss=flags.use_tfr_loss,
-        use_horovod=flags.use_horovod,
-        normalized_lm=flags.normalized_lm,
-        task_ids=flags.task_ids,
-        task_weights=flags.task_weights,
-
-        # Vocab and word embedding for id features
-        PAD_FOR_ID_FTR=flags.PAD_FOR_ID_FTR,
-        UNK_FOR_ID_FTR=flags.UNK_FOR_ID_FTR,
-        vocab_file_for_id_ftr=flags.vocab_file_for_id_ftr,
-        we_file_for_id_ftr=flags.we_file_for_id_ftr,
-        we_trainable_for_id_ftr=flags.we_trainable_for_id_ftr,
-
-        l1=flags.l1,
-        l2=flags.l2,
-    )
-
-
-def get_hparams(argv):
+def get_hparams():
     """
     Get hyper-parameters.
     """
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    hparams, unknown_params = parser.parse_known_args(argv)
-    hparams = create_hparams(hparams)
-
+    hparams = tf.contrib.training.HParams(**Args()._asdict())
     # Print all hyper-parameters
     for k, v in sorted(vars(hparams).items()):
         print('--' + k + '=' + str(v))
@@ -270,7 +157,7 @@ def get_hparams(argv):
     return hparams
 
 
-def main(argv):
+def main(_):
     """
     This is the main method for training the model.
     :param argv: training parameters
@@ -280,7 +167,7 @@ def main(argv):
     task_type = executor_utils.get_executor_task_type()
 
     # Get hyper-parameters.
-    hparams = get_hparams(argv)
+    hparams = get_hparams()
 
     tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -330,4 +217,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    tf.compat.v1.app.run(main=main)
+    tf.compat.v1.app.run()

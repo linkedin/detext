@@ -49,7 +49,7 @@ class BertModel(object):
         has_doc = self.doc_fields is not None
 
         # at least one of query and doc_fields should be true
-        if (not has_query) and (not has_doc):
+        if not (has_query or has_doc):
             raise ValueError('query and doc_fields cannot both be None')
 
         doc_fields = self.doc_fields

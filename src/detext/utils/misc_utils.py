@@ -65,15 +65,15 @@ def extend_hparams(hparams):
     assert 0 <= hparams.rnn_dropout <= 1, 'rnn_dropout must be within [0.0, 1.0]'
 
     # Get number of doc/usr text fields
-    num_doc_fields = sum([name.startswith('doc_') for name in hparams.feature_names.split(',')])
+    num_doc_fields = sum([name.startswith('doc_') for name in hparams.feature_names])
     hparams.add_hparam("num_doc_fields", num_doc_fields)
-    num_usr_fields = sum([name.startswith('usr_') for name in hparams.feature_names.split(',')])
+    num_usr_fields = sum([name.startswith('usr_') for name in hparams.feature_names])
     hparams.add_hparam("num_usr_fields", num_usr_fields)
 
     # Get number of doc/usr id fields
-    num_doc_id_fields = sum([name.startswith('docId_') for name in hparams.feature_names.split(',')])
+    num_doc_id_fields = sum([name.startswith('docId_') for name in hparams.feature_names])
     hparams.add_hparam("num_doc_id_fields", num_doc_id_fields)
-    num_usr_id_fields = sum([name.startswith('usrId_') for name in hparams.feature_names.split(',')])
+    num_usr_id_fields = sum([name.startswith('usrId_') for name in hparams.feature_names])
     hparams.add_hparam("num_usr_id_fields", num_usr_id_fields)
     if num_doc_id_fields > 0 or num_usr_id_fields > 0:
         assert hparams.vocab_file_for_id_ftr is not None, \
@@ -103,23 +103,14 @@ def extend_hparams(hparams):
     if hparams.ftr_ext != 'cnn':
         hparams.filter_window_sizes = '0'
 
-    # convert from string to arrays for filter_window_sizes
-    filter_window_sizes_str = hparams.filter_window_sizes
-    force_set_hparam(hparams, "filter_window_sizes", [int(x.strip()) for x in filter_window_sizes_str.split(',')])
-
     assert hparams.pmetric is not None, "Please set your primary evaluation metric using --pmetric option"
     assert hparams.pmetric != 'confusion_matrix', 'confusion_matrix cannot be used as primary evaluation metric.'
 
     # Set all relevant evaluation metrics
-    all_metrics = hparams.all_metrics.split(',') if hparams.all_metrics else [hparams.pmetric]
+    all_metrics = hparams.all_metrics if hparams.all_metrics else [hparams.pmetric]
     assert hparams.pmetric in all_metrics, "pmetric must be within all_metrics"
     force_set_hparam(hparams, "all_metrics", all_metrics)
 
-    # convert from string to arrays for num_hidden
-    num_hidden_str = str(hparams.num_hidden)
-    force_set_hparam(hparams, "num_hidden", [int(x.strip()) for x in num_hidden_str.split(',')])
-    # convert from string to arrays for feature names
-    setattr(hparams, 'feature_names', tuple(hparams.feature_names.split(',')))
     # lambda rank
     if hparams.lambda_metric is not None and hparams.lambda_metric == 'ndcg':
         setattr(hparams, 'lambda_metric', {'metric': 'ndcg', 'topk': 10})
@@ -133,15 +124,8 @@ def extend_hparams(hparams):
         hparams.add_hparam('ftr_mean', np.array(ftr_mean, dtype=np.float32))
         hparams.add_hparam('ftr_std', np.array(ftr_std, dtype=np.float32))
 
-    # for score rescaling, the score_rescale has the xgboost mean and std.
-    if hparams.score_rescale:
-        force_set_hparam(hparams, 'score_rescale', [float(x) for x in hparams.score_rescale.split(',')])
-
     if hparams.explicit_empty:
         assert hparams.ftr_ext == 'cnn', 'explicit_empty will only be True when ftr_ext is cnn'
-
-    # Convert string to arrays for emb_sim_func
-    force_set_hparam(hparams, "emb_sim_func", hparams.emb_sim_func.split(','))
 
     # Checking hparam keep_checkpoint_max: must be >= 0
     if hparams.keep_checkpoint_max:
@@ -158,21 +142,19 @@ def extend_hparams(hparams):
     assert hparams.l2 is None or hparams.l2 >= 0, "l1 scale must be non-negative"
 
     # Multi-task training: currently only support ranking tasks with both deep and wide features
-    if hparams.task_ids is not None:
+    if hparams.task_ids:
         # Check related inputs for multi-task training
         assert 'wide_ftrs_sp_idx' not in hparams.feature_names, "multi-task with sparse features not supported"
         assert 'task_id' in hparams.feature_names, "task_id feature not found for multi-task training"
 
         # Parse task ids an weights from inputs and convert them into a map
-        task_ids = [int(x.strip()) for x in hparams.task_ids.split(',')]
-        raw_weights = [float(x.strip()) for x in hparams.task_weights.split(',')] if hparams.task_weights is not None \
-            else [1.0] * len(task_ids)
+        task_ids = hparams.task_ids
+        raw_weights = hparams.task_weights if hparams.task_weights else [1.0] * len(task_ids)
         task_weights = [float(wt) / sum(raw_weights) for wt in raw_weights]  # Normalize task weights
 
         # Check size of task_ids and task_weights
         assert len(task_ids) == len(task_weights), "size of task IDs and weights must match"
 
-        force_set_hparam(hparams, "task_ids", task_ids)
         force_set_hparam(hparams, "task_weights", task_weights)
 
     return hparams
@@ -240,7 +222,7 @@ def random_baseline(input_files, topk):
                 scores = random.sample(range(len(label)), len(label))
                 ndcg_scores.append(test_utils.get_ndcg(scores, label, topk))
     print(count)
-    print("{} : {}".format("Random baseline NDCG", np.mean(ndcg_scores)))
+    print(f"Random baseline NDCG : {np.mean(ndcg_scores)}")
 
 
 def generate_latency_test_data(input_file, output_file, field_names, target_docs, num_wide):
@@ -258,7 +240,7 @@ def generate_latency_test_data(input_file, output_file, field_names, target_docs
         # at most 1000 queries
         if count == 1000:
             break
-    print('read ' + str(count), "records")
+    print(f"read {count}", "records")
 
     # for each query
     with open(output_file, 'w') as fout:
