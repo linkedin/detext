@@ -183,8 +183,20 @@ def main(_):
     if hparams.num_eval_rounds is not None:
         hparams.steps_per_eval = max(1, int(hparams.num_train_steps / hparams.num_eval_rounds))
 
+    # For data sharding when using horovod
+    hparams.add_hparam("hvd_info", None)
+    if hparams.use_horovod:
+        import horovod.tensorflow as hvd
+        hvd.init()
+        hparams.num_train_steps = hparams.num_train_steps // hvd.size()
+        hparams.num_warmup_steps = hparams.num_warmup_steps // hvd.size()
+        hparams.steps_per_eval = hparams.steps_per_eval // hvd.size()
+        hparams.steps_per_stats = hparams.steps_per_stats // hvd.size()
+        hparams.hvd_info = {'rank': hvd.rank(), 'size': hvd.size()}
+
     # Create directory and launch tensorboard
-    if task_type == executor_utils.CHIEF or task_type == executor_utils.LOCAL_MODE:
+    if ((task_type == executor_utils.CHIEF or task_type == executor_utils.LOCAL_MODE) and (
+            not hparams.use_horovod or (hparams.use_horovod and hvd.rank() == 0))):
         # If not resume training from checkpoints, delete output directory.
         if not hparams.resume_training:
             logging.info("Removing previous output directory...")
@@ -204,7 +216,8 @@ def main(_):
         # Wait for dir created form chief
         time.sleep(10)
 
-    if task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE:
+    if ((task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE) and (
+            not hparams.use_horovod or (hparams.use_horovod and hvd.rank() == 0))):
         # set up logger for evaluator
         sys.stdout = logger.Logger(os.path.join(hparams.out_dir, 'eval_log.txt'))
 
