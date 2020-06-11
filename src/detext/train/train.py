@@ -73,8 +73,9 @@ def train(hparams, input_fn):
         input_fn=input_fn_common(hparams.dev_file),
         exporters=exporter_list,
         steps=None,
-        # Set throttle_secs to 10 min to avoid warning to spam logs
-        # Set throttle to 0 for horovod: https://github.com/horovod/horovod/issues/182#issuecomment-533897757
+        # Set throttle to 0 to start evaluation right away.
+        # (Note: throttle_secs has to be 0 for horovod:
+        # https://github.com/horovod/horovod/issues/182#issuecomment-533897757)
         throttle_secs=0,
         start_delay_secs=10)
 
