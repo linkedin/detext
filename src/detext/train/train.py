@@ -75,7 +75,7 @@ def train(hparams, input_fn):
         steps=None,
         # Set throttle_secs to 10 min to avoid warning to spam logs
         # Set throttle to 0 for horovod: https://github.com/horovod/horovod/issues/182#issuecomment-533897757
-        throttle_secs=0 if hvd else 600,
+        throttle_secs=0,
         start_delay_secs=10)
 
     # Training and evaluation with dev set
