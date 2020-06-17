@@ -201,7 +201,7 @@ class ArgSuite(Generic[ArgType]):
             parser.add_argument(f'--{arg_name}', **vars(kwargs))
 
     def parse_to_arg(self, argv: Optional[Sequence[str]] = None) -> ArgType:
-        ns = self._parser.parse_args(argv)
+        ns, _ = self._parser.parse_known_args(argv)
         logger.info(f"{argv} is parsed to {ns}")
         kwargs = {
             attr: get_origin(self._arg_class._field_types[attr])(value)

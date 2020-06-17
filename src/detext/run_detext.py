@@ -34,7 +34,7 @@ class Args(NamedTuple):
     num_units: int = 128  # word embedding size.
     num_units_for_id_ftr: int = 128  # id feature embedding size.
     sp_emb_size: int = 1  # Embedding size of sparse features
-    num_hidden: List[int] = 0  # hidden size.
+    num_hidden: List[int] = [0]  # hidden size.
     num_wide: int = 0  # number of wide features per doc.
     num_wide_sp: int = None  # number of sparse wide features per doc
     use_deep: bool = True  # Whether to use deep features.
@@ -52,7 +52,7 @@ class Args(NamedTuple):
     num_classes: int = 1  # Number of classes for multi-class classification tasks.
 
     # CNN related
-    filter_window_sizes: List[int] = 3  # CNN filter window sizes.
+    filter_window_sizes: List[int] = [3]  # CNN filter window sizes.
     num_filters: int = 100  # number of CNN filters.
     explicit_empty: bool = False  # Explicitly modeling empty string in cnn
 
