@@ -46,7 +46,7 @@ class Args(NamedTuple):
     # Ranking specific
     ltr_loss_fn: str = 'pairwise'  # learning-to-rank method.
     emb_sim_func: List[str] = ['inner']  # Approach to computing query/doc similarity scores
-    _emb_sim_func = {"choices": ('inner', 'hadamard', 'concat')}
+    _emb_sim_func = {"choices": ('inner', 'hadamard', 'concat', 'diff')}
 
     # Classification specific
     num_classes: int = 1  # Number of classes for multi-class classification tasks.

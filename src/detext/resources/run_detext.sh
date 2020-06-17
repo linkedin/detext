@@ -2,13 +2,13 @@
 PYTHONPATH=../.. python ../run_detext.py \
 --ftr_ext cnn \
 --feature_names query,label,wide_ftrs,doc_title,usr_headline,wide_ftrs_sp_idx,wide_ftrs_sp_val \
---emb_sim_func inner \
+--emb_sim_func inner concat diff \
 --elem_rescale True \
 --learning_rate 0.001 \
 --ltr softmax \
 --max_len 32 \
 --min_len 3 \
---filter_window_sizes 3 \
+--filter_window_sizes 1 2 3 \
 --num_filters 50 \
 --num_hidden 100 \
 --num_train_steps 10 \
@@ -18,6 +18,7 @@ PYTHONPATH=../.. python ../run_detext.py \
 --sp_emb_size 10 \
 --optimizer bert_adam \
 --pmetric ndcg@10 \
+--all_metrics ndcg@10 precision@1 \
 --random_seed 11 \
 --steps_per_stats 1 \
 --steps_per_eval 2 \
