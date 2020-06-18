@@ -86,7 +86,7 @@ The main script for running DeText model training is through `src/detext/run_det
 For a test run on a small sample dataset, please 
 checkout the following script.
 ```$xslt
-cd src/detext/resources
+cd test/resources
 bash run_detext.sh
 ```
 
