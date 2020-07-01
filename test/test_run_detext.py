@@ -11,6 +11,7 @@ out_dir = os.path.join(root_dir, "output")
 data = os.path.join(root_dir, "train", "dataset", "tfrecord")
 multitask_data = os.path.join(root_dir, "train", "multitask", "tfrecord")
 vocab = os.path.join(root_dir, "vocab.txt")
+bert_config = os.path.join(root_dir, "bert_config.json")
 
 
 class TestModel(tf.test.TestCase):
@@ -75,16 +76,30 @@ class TestModel(tf.test.TestCase):
         main(sys.argv)
         self._cleanUp(output)
 
-    def test_run_detext_non_cnn(self):
+    def test_run_detext_lstm(self):
         """
-        This method test run_detext with non-CNN models
+        This method test run_detext with LSTM models
         """
-        output = os.path.join(out_dir, "non_cnn_model")
+        output = os.path.join(out_dir, "lstm")
         args = self.args + \
             ["--filter_window_size", "0",
              "--ftr_ext", "lstm",
              "--num_hidden", "10",
              "--out_dir", output]
+        sys.argv[1:] = args
+        main(sys.argv)
+        self._cleanUp(output)
+
+    def test_run_detext_bert(self):
+        """
+        This method test run_detext with BERT models
+        """
+        output = os.path.join(out_dir, "bert")
+        args = self.args + \
+               ["--ftr_ext", "bert",
+                "--bert_config_file", bert_config,
+                "--use_bert_dropout", "True",
+                "--out_dir", output]
         sys.argv[1:] = args
         main(sys.argv)
         self._cleanUp(output)
