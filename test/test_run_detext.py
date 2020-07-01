@@ -96,10 +96,10 @@ class TestModel(tf.test.TestCase):
         """
         output = os.path.join(out_dir, "bert")
         args = self.args + \
-               ["--ftr_ext", "bert",
-                "--bert_config_file", bert_config,
-                "--use_bert_dropout", "True",
-                "--out_dir", output]
+            ["--ftr_ext", "bert",
+             "--bert_config_file", bert_config,
+             "--use_bert_dropout", "True",
+             "--out_dir", output]
         sys.argv[1:] = args
         main(sys.argv)
         self._cleanUp(output)
