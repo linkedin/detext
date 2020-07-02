@@ -13,30 +13,29 @@ def create_placeholder_for_ftrs(ph_name, shape, dtype, ftr_name, ftr_names, defa
     return ph, ph_one_batch
 
 
-def get_query(hparams, regex_replace_pattern, add_dimension=False):
+def get_query(hparams):
     """
     Helper function to get query and query_placeholder
     :param hparams: hparams
-    :param regex_replace_pattern: The regex pattern to add a white space before and after
-    :param add_dimension: whether to add a dimension then remove to query (this is to support online model for QAP as
-    quasar model serving requires at least one dimension)
     :return: query and query_placeholder
     """
     # query text feature
-    if add_dimension:
+    # If hparams.add_first_dim_for_query_placeholder is True, the query placeholder has dimension [None]
+    # This is to use the query feature as a document feature in model serving
+    if hparams.add_first_dim_for_query_placeholder:
         query_placeholder, query = create_placeholder_for_ftrs("query_placeholder", [None], tf.string, 'query',
                                                                hparams.feature_names)
     else:
         query_placeholder, query = create_placeholder_for_ftrs("query_placeholder", [], tf.string, 'query',
                                                                hparams.feature_names)
     if query is not None:
-        if add_dimension:
+        if hparams.add_first_dim_for_query_placeholder:
             # remove added dimension
             query = tf.squeeze(query, [0])
 
         # tokenize query
-        if regex_replace_pattern is not None:
-            query = tf.regex_replace(input=query, pattern=regex_replace_pattern, rewrite=" \\1 ")
+        if hparams.regex_replace_pattern is not None:
+            query = tf.regex_replace(input=query, pattern=hparams.regex_replace_pattern, rewrite=" \\1 ")
 
         query = data_fn.process_text(
             query,
@@ -49,7 +48,7 @@ def get_query(hparams, regex_replace_pattern, add_dimension=False):
     return query, query_placeholder
 
 
-def get_doc_fields(hparams, regex_replace_pattern):
+def get_doc_fields(hparams):
     """
     Each document field has a placeholder.
     The regex is to add whitespace on both sides of punctuations.
@@ -68,8 +67,8 @@ def get_doc_fields(hparams, regex_replace_pattern):
 
             one_doc_field = placeholder
             # add whitespace on both sides of punctuations if regex pattern is not None
-            if regex_replace_pattern is not None:
-                one_doc_field = tf.regex_replace(input=one_doc_field, pattern=regex_replace_pattern, rewrite=" \\1 ")
+            if hparams.regex_replace_pattern is not None:
+                one_doc_field = tf.regex_replace(input=one_doc_field, pattern=hparams.regex_replace_pattern, rewrite=" \\1 ")
             one_doc_field = data_fn.process_text(
                 one_doc_field,
                 tf_vocab_table,
@@ -83,12 +82,11 @@ def get_doc_fields(hparams, regex_replace_pattern):
     return doc_fields, doc_text_placeholders
 
 
-def get_usr_fields(hparams, regex_replace_pattern):
+def get_usr_fields(hparams):
     """
     Each user field has a placeholder.
     The regex is to add whitespace on both sides of punctuations.
     :param hparams: hparams
-    :param regex_replace_pattern: The regex pattern to add a white space before and after
     :return:
     """
     usr_text_placeholders = []
@@ -96,15 +94,23 @@ def get_usr_fields(hparams, regex_replace_pattern):
     tf_vocab_table = vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK)
     for ftr_name in hparams.feature_names:
         if ftr_name.startswith('usr_'):
-            # each user field is a placeholder (one string)
-            placeholder = tf.placeholder(shape=[], dtype=tf.string, name=ftr_name + "_placeholder")
+            # If hparams.add_first_dim_for_usr_placeholder is True, the usr placeholders have dimension [None]
+            # This is to use the usr field features as document features in model serving
+            if hparams.add_first_dim_for_usr_placeholder:
+                # each user field is a placeholder (one string)
+                placeholder = tf.placeholder(shape=[None], dtype=tf.string, name=ftr_name + "_placeholder")
+            else:
+                placeholder = tf.placeholder(shape=[], dtype=tf.string, name=ftr_name + "_placeholder")
             usr_text_placeholders.append(placeholder)
 
             one_usr_field = placeholder
             # add whitespace on both sides of punctuations if regex pattern is not None
-            if regex_replace_pattern is not None:
-                one_usr_field = tf.regex_replace(input=one_usr_field, pattern=regex_replace_pattern, rewrite=" \\1 ")
+            if hparams.regex_replace_pattern is not None:
+                one_usr_field = tf.regex_replace(input=one_usr_field, pattern=hparams.regex_replace_pattern, rewrite=" \\1 ")
 
+            # remove added dimension
+            if hparams.add_first_dim_for_usr_placeholder:
+                one_usr_field = tf.squeeze(one_usr_field, [0])
             one_usr_field = tf.expand_dims(one_usr_field, axis=0)
             one_usr_field = data_fn.process_text(
                 one_usr_field,

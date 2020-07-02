@@ -145,15 +145,15 @@ def serving_input_fn(hparams):
     # Define placeholders and features
     doc_feature_names = [df for df in hparams.feature_names if df.startswith('doc_')]
     usr_feature_names = [df for df in hparams.feature_names if df.startswith('usr_')]
-    doc_fields, doc_placeholders = train_helper.get_doc_fields(hparams, hparams.regex_replace_pattern)
-    usr_fields, usr_placeholders = train_helper.get_usr_fields(hparams, hparams.regex_replace_pattern)
+    doc_fields, doc_placeholders = train_helper.get_doc_fields(hparams)
+    usr_fields, usr_placeholders = train_helper.get_usr_fields(hparams)
 
     doc_id_feature_names = [df for df in hparams.feature_names if df.startswith('docId_')]
     usr_id_feature_names = [df for df in hparams.feature_names if df.startswith('usrId_')]
     doc_id_fields, doc_id_placeholders = train_helper.get_doc_id_fields(hparams)
     usr_id_fields, usr_id_placeholders = train_helper.get_usr_id_fields(hparams)
 
-    query, query_placeholder = train_helper.get_query(hparams, hparams.regex_replace_pattern)
+    query, query_placeholder = train_helper.get_query(hparams)
     wide_ftr_placeholder, wide_ftrs = train_helper.create_placeholder_for_ftrs(
         "wide_ftr_placeholder", [None, hparams.num_wide], tf.float32, 'wide_ftrs', hparams.feature_names)
     wide_ftr_sp_idx_placeholder, wide_ftrs_sp_idx = train_helper.create_placeholder_for_ftrs(
