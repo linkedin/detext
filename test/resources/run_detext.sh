@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-PYTHONPATH=../.. python ../../src/detext/run_detext.py \
+PYTHONPATH=../../src python ../../src/detext/run_detext.py \
 --ftr_ext cnn \
 --feature_names query,label,wide_ftrs,doc_title,usr_headline,wide_ftrs_sp_idx,wide_ftrs_sp_val \
 --emb_sim_func inner concat diff \
@@ -31,3 +31,5 @@ PYTHONPATH=../.. python ../../src/detext/run_detext.py \
 --train_file sample_data/hc_examples.tfrecord \
 --vocab_file vocab.txt \
 --out_dir /tmp/detext-output/hc_cnn_f50_u32_h100 \
+--add_first_dim_for_query_placeholder True \
+--add_first_dim_for_usr_placeholder True

@@ -125,6 +125,9 @@ class Args(NamedTuple):
     all_metrics: List[str] = None  # All metrics.
     score_rescale: List[float] = None  # The mean and std of previous model. For score rescaling, the score_rescale has the xgboost mean and std.
 
+    add_first_dim_for_query_placeholder: bool = False  # Whether to add a batch dimension for query and usr_* placeholders. This shall be set to True if the query field is used as document feature in model serving.# noqa: E501
+    add_first_dim_for_usr_placeholder: bool = False  # Whether to add a batch dimension for query and usr_* placeholders. This shall be set to True if usr fields are used document feature in model serving.# noqa: E501
+
     tokenization: str = 'punct'  # The tokenzation performed for data preprocessing. Currently support: punct/plain(no split). Note that this should be set correctly to ensure consistency for savedmodel.# noqa: E501
     _tokenization = {'choices': ['plain', 'punct']}
 
