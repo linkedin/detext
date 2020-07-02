@@ -60,6 +60,7 @@ class Args(NamedTuple):
     lr_bert: float = None  # Learning rate factor for bert components
     bert_config_file: str = None  # bert config.
     bert_checkpoint: str = None  # pretrained bert model checkpoint.
+    use_bert_dropout: bool = False  # apply dropout during training in bert layers.
 
     # LSTM related
     unit_type: str = 'lstm'  # RNN cell unit type. Currently only supports lstm. Will support other cell types in the future

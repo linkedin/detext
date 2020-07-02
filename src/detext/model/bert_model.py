@@ -113,16 +113,18 @@ class BertModel(object):
         # 2. apply bert
         self.text_ftr_size = hparams.num_units
 
+        is_training = self.mode == tf.estimator.ModeKeys.TRAIN
+
         bertm = create_bert_model(
             bert_config_path=hparams.bert_config_file,
-            is_training=False,
+            is_training=(is_training and hparams.use_bert_dropout),
             input_ids=self.bert_input_ids,
             input_mask=self.bert_input_mask,
             use_one_hot_embeddings=False
         )
 
         # initialize bert with pretrained checkpoint
-        if self.mode == tf.estimator.ModeKeys.TRAIN and self.hparams.bert_checkpoint is not None:
+        if is_training and self.hparams.bert_checkpoint is not None:
             init_from_checkpoint(self.hparams.bert_checkpoint)
 
         # 3. get query embedding and doc_fields embedding
@@ -135,7 +137,7 @@ class BertModel(object):
         )  # shape = [# of texts, bert_dim]
 
         # dropout
-        if self.mode == tf.estimator.ModeKeys.TRAIN:
+        if is_training:
             pooled_output = tf.nn.dropout(pooled_output, keep_prob=0.9)
 
         # Get query features
