@@ -205,7 +205,7 @@ class ArgSuite(Generic[ArgType]):
         logger.info(f"{argv} is parsed to {ns}")
         kwargs = {
             attr: get_origin(self._arg_class._field_types[attr])(value)
-            if isinstance(value, List) else value
+            if isinstance(value, List) and get_origin(self._arg_class._field_types[attr]) != List else value
             for attr, value in vars(ns).items()
         }
         return self._arg_class(**kwargs)
