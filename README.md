@@ -1,6 +1,6 @@
 ![Python 3.6 application](https://github.com/linkedin/detext/workflows/Python%203.6%20application/badge.svg) ![Python 3.7 application](https://github.com/linkedin/detext/workflows/Python%203.7%20application/badge.svg)  ![tensorflow](https://img.shields.io/badge/tensorflow-1.14.0-green.svg) ![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)
 
-DeText: A Deep Neural Ranking Framework with Text Understanding
+DeText: A Deep Neural Text Understanding Framework
 ========
 
 ![](thumbnail_DeText.png) 
