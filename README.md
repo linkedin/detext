@@ -67,7 +67,13 @@ All these can be customized via hyper-parameters in the DeText template. Note th
 ### Setup dev environment
 
 1. Create & source your virtualenv
-1. Run setup for DeText:
+
+```bash
+virtualenv venv
+source venv/Scripts/activate
+```
+
+2. Run setup for DeText:
 
 ```bash
 python setup.py develop
