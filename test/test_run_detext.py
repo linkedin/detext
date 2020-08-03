@@ -131,3 +131,11 @@ class TestModel(tf.test.TestCase):
         sys.argv[1:] = args
         main(sys.argv)
         self._cleanUp(output)
+
+
+def test_demo():
+    from subprocess import run, PIPE
+    from pathlib import Path
+    completed_process = run(['sh', 'run_detext.sh'], stderr=PIPE, cwd=f'{Path(__file__).parent}/resources')
+    assert completed_process.returncode == 0
+    assert completed_process.stderr.endswith(b'metric/precision@1 = 1.0\n')
