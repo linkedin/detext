@@ -43,7 +43,7 @@ def get_query(hparams):
             hparams.CLS, hparams.SEP, hparams.PAD,
             hparams.max_len,
             hparams.min_len,
-            cnn_filter_window_size=max(hparams.filter_window_sizes)
+            cnn_filter_window_size=max(hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
         )
     return query, query_placeholder
 
@@ -75,7 +75,7 @@ def get_doc_fields(hparams):
                 hparams.CLS, hparams.SEP, hparams.PAD,
                 hparams.max_len,
                 hparams.min_len,
-                cnn_filter_window_size=max(hparams.filter_window_sizes)
+                cnn_filter_window_size=max(hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
             )
             one_doc_field = tf.expand_dims(one_doc_field, axis=0)
             doc_fields.append(one_doc_field)
@@ -118,7 +118,7 @@ def get_usr_fields(hparams):
                 hparams.CLS, hparams.SEP, hparams.PAD,
                 hparams.max_len,
                 hparams.min_len,
-                cnn_filter_window_size=max(hparams.filter_window_sizes)
+                cnn_filter_window_size=max(hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0
             )
             usr_fields.append(one_usr_field)
     return usr_fields, usr_text_placeholders

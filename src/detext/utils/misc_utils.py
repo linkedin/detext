@@ -99,6 +99,10 @@ def extend_hparams(hparams):
     tok2regex_pattern = {'plain': None, 'punct': r'(\pP)'}
     hparams.regex_replace_pattern = tok2regex_pattern[hparams.tokenization]
 
+    # if not using cnn models, then disable cnn parameters
+    if hparams.ftr_ext != 'cnn':
+        hparams.filter_window_sizes = [0]
+
     assert hparams.pmetric is not None, "Please set your primary evaluation metric using --pmetric option"
     assert hparams.pmetric != 'confusion_matrix', 'confusion_matrix cannot be used as primary evaluation metric.'
 
