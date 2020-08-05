@@ -4,7 +4,7 @@ import shutil
 import tensorflow as tf
 import sys
 
-from detext.run_detext import main
+from detext.run_detext import main, run_detext, DetextArg
 
 root_dir = os.path.join(os.path.dirname(__file__), "resources")
 out_dir = os.path.join(root_dir, "output")
@@ -95,13 +95,25 @@ class TestModel(tf.test.TestCase):
         This method test run_detext with BERT models
         """
         output = os.path.join(out_dir, "bert")
-        args = self.args + \
-            ["--ftr_ext", "bert",
-             "--bert_config_file", bert_config,
-             "--use_bert_dropout", "True",
-             "--out_dir", output]
-        sys.argv[1:] = args
-        main(sys.argv)
+        argument = DetextArg(
+            ftr_ext='bert', num_units=4, num_wide=3,
+            ltr_loss_fn='softmax', emb_sim_func=['inner', 'concat', 'diff'], num_filters=50,
+            bert_config_file=bert_config,
+            use_bert_dropout=True, optimizer='bert_adam',
+            learning_rate=0.002, num_train_steps=4,
+            train_batch_size=2, test_batch_size=2,
+            train_file=data,
+            dev_file=data,
+            test_file=data,
+            out_dir=output, max_len=16,
+            vocab_file=vocab,
+            vocab_file_for_id_ftr=vocab,
+            steps_per_stats=1, steps_per_eval=2, keep_checkpoint_max=5,
+            feature_names=['label', 'query', 'doc_completedQuery', 'usr_headline', 'usr_skills', 'usr_currTitles',
+                           'usrId_currTitles', 'docId_completedQuery', 'wide_ftrs', 'weight'],
+            pmetric='ndcg@10', all_metrics=['precision@1', 'ndcg@10'])
+
+        run_detext(argument)
         self._cleanUp(output)
 
     def test_run_detext_multitask(self):
@@ -119,3 +131,11 @@ class TestModel(tf.test.TestCase):
         sys.argv[1:] = args
         main(sys.argv)
         self._cleanUp(output)
+
+
+def test_demo():
+    from subprocess import run, PIPE
+    from pathlib import Path
+    completed_process = run(['sh', 'run_detext.sh'], stderr=PIPE, cwd=f'{Path(__file__).parent}/resources')
+    assert completed_process.returncode == 0
+    assert completed_process.stderr.endswith(b'metric/precision@1 = 1.0\n')
