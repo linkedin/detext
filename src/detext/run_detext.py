@@ -30,6 +30,9 @@ class DetextArg(NamedTuple):
     #  kwargs utility function for split a str to a List, provided for backward compatibilities
     #  Please use built-in List parsing support when adding new arguments
     __comma_split_list = lambda t: {'type': lambda s: [t(item) for item in s.split(',')] if ',' in s else t(s), 'nargs': None}  # noqa: E731
+
+    feature_names: List[str]  # Feature names.
+
     # network
     ftr_ext: str  # NLP feature extraction module.
     _ftr_ext = {'choices': ['cnn', 'bert', 'lstm_lm', 'lstm']}
@@ -119,7 +122,6 @@ class DetextArg(NamedTuple):
     num_eval_rounds: Optional[int] = None  # number of evaluation round, this param will override steps_per_eval as max(1, num_train_steps / num_eval_rounds)
     steps_per_eval: int = 1000  # training steps to evaluate datasets.
     keep_checkpoint_max: int = 5  # The maximum number of recent checkpoint files to keep. If 0, all checkpoint files are kept. Defaults to 5
-    feature_names: Optional[List[str]] = None  # the feature names.
     _feature_names = __comma_split_list(str)
     lambda_metric: Optional[str] = None  # only support ndcg.
     init_weight: float = 0.1  # weight initialization value.
