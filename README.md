@@ -96,6 +96,72 @@ Users have full control for custom designing DeText models. In the training manu
 * Training data format and preparation
 * Key parameters to customize and train DeText models
 * Detailed information about all DeText training parameters for full customization
+
+## **References**
+Please cite DeText in your publications if it helps your research:
+```
+@manual{guo-liu20,
+  author    = {Weiwei Guo and
+               Xiaowei Liu and
+               Sida Wang and 
+               Huiji Gao and
+               Bo Long},
+  title     = {DeText: A Deep Neural Text Understanding Framework},
+  url       = {https://github.com/linkedin/detext},
+  year      = {2020}
+}
+
+@inproceedings{guo-gao19,
+  author    = {Weiwei Guo and
+               Huiji Gao and
+               Jun Shi and 
+               Bo Long},
+  title     = {Deep Natural Language Processing for Search Systems},
+  booktitle = {ACM SIGIR 2019},
+  year      = {2019}
+}
+
+@inproceedings{guo-gao19,
+  author    = {Weiwei Guo and
+               Huiji Gao and
+               Jun Shi and 
+               Bo Long and 
+   Liang Zhang and
+   Bee-Chung Chen and
+   Deepak},
+  title     = {Deep Natural Language Processing for Search and Recommender Systems},
+  booktitle = {ACM SIGKDD 2019},
+  year      = {2019}
+}
+
+@inproceedings{guo-liu20,
+  author    = {Weiwei Guo and
+               Xiaowei Liu and
+               Sida Wang and 
+               Huiji Gao and
+   Ananth Sankar and 
+   Zimeng Yang and 
+   Qi Guo and 
+   Liang Zhang and
+   Bo Long and 
+   Bee-Chung Chen and 
+   Deepak Agarwal},
+  title     = {DeText: A Deep Text Ranking Framework with BERT},
+  booktitle = {ACM CIKM 2020},
+  year      = {2020}
+}
+
+@inproceedings{wang-guo20,
+  author    = {Sida Wang and
+               Weiwei Guo and
+               Huiji Gao and
+               Bo Long},
+  title     = {Efficient Neural Query Auto Completion},
+  booktitle = {ACM CIKM 2020},
+  year      = {2020}
+}
+```
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
