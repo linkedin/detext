@@ -126,9 +126,9 @@ Please cite DeText in your publications if it helps your research:
                Huiji Gao and
                Jun Shi and 
                Bo Long and 
-   Liang Zhang and
-   Bee-Chung Chen and
-   Deepak},
+               Liang Zhang and
+               Bee-Chung Chen and
+               Deepak},
   title     = {Deep Natural Language Processing for Search and Recommender Systems},
   booktitle = {ACM SIGKDD 2019},
   year      = {2019}
@@ -139,13 +139,13 @@ Please cite DeText in your publications if it helps your research:
                Xiaowei Liu and
                Sida Wang and 
                Huiji Gao and
-   Ananth Sankar and 
-   Zimeng Yang and 
-   Qi Guo and 
-   Liang Zhang and
-   Bo Long and 
-   Bee-Chung Chen and 
-   Deepak Agarwal},
+               Ananth Sankar and 
+               Zimeng Yang and 
+               Qi Guo and 
+               Liang Zhang and
+               Bo Long and 
+               Bee-Chung Chen and 
+               Deepak Agarwal},
   title     = {DeText: A Deep Text Ranking Framework with BERT},
   booktitle = {ACM CIKM 2020},
   year      = {2020}
@@ -158,6 +158,16 @@ Please cite DeText in your publications if it helps your research:
                Bo Long},
   title     = {Efficient Neural Query Auto Completion},
   booktitle = {ACM CIKM 2020},
+  year      = {2020}
+}
+
+@inproceedings{liu-guo20,
+  author    = {Xiaowei Liu and
+               Weiwei Guo and
+               Huiji Gao and
+               Bo Long},
+  title     = {Deep Search Query Intent Understanding},
+  booktitle = {arXiv:2008.06759},
   year      = {2020}
 }
 ```
