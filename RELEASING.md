@@ -19,7 +19,7 @@ NOTE: this guide is for DeText owners to publish new versions to PyPi
     ```shell script
     bash pypi_release.sh 
     ```
-   Note that this should prepare and upload two packages: `x.x.x` and `x.x.xrc1`. The one with `rc1` suffix is for LI internal use.
+   Note that this should prepare and upload two packages (`detext` and `li_detext`) with the same version. `detext` is the oss package for public use. `li_detext` is for LI internal use only.
 
 You can verify the release upload at https://pypi.org/manage/project/detext/releases/
 
