@@ -81,6 +81,9 @@ Run all tests:
 pytest 
 ```
 
+### Checkout the demo notebooks
+`notebooks/text_classification_demo.ipynb` shows how to use DeText to train a production ready multi-class text classification model. A public query intent classification dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
+
 ### Running DeText model training toy example
 The main script for running DeText model training is through `src/detext/run_detext.py`. Users could customize the hyperparmeters based on different requirements for specific tasks. Please refer to [TRAINING.md](TRAINING.md) for more details on the training data format and hyperparameter description. 
 For a test run on a small sample dataset, please 
