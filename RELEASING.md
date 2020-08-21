@@ -4,32 +4,18 @@ Steps to releasing a new version of DeText involves the following steps: 1) publ
 ## Publishing to PyPi
 NOTE: this guide is for DeText owners to publish new versions to PyPi
 
-1. Make sure you have the correct permission to release DeText packages. Only owners and maintainers can upload new releases for DeText. Check more details at https://pypi.org/project/detext/.
+ Make sure you have the correct permission to release DeText packages. Only owners and maintainers can upload new releases for DeText. Check more details at https://pypi.org/project/detext/.
 
-2. Create a source distribution by:
-* update the version in `setup.py`
-* comment the following lines (for internal use, we cannot have these dependencies in the pypi package)
-```
-        'tensorflow==1.14.0',
-        'tensorflow_ranking==0.1.4',
-        'gast==0.2.2'
-```
-Then run the following:
-```
-python setup.py sdist
-```
-
-3. Install `twine` for uploading to PyPi
-
-```
-pip install twine
-```
-
-4. Upload the distribution
-
-```
-twine upload dist/*
-```
+### Steps:
+1. Install `twine` for uploading to PyPi
+    ```shell script
+    pip install twine
+    ```
+1. Upload the distributions
+    ```shell script
+    bash pypi_release.sh 
+    ```
+   Note that this should prepare and upload two packages: `x.x.x` and `x.x.xrc1`. The one with `rc1` suffix is for LI internal use.
 
 You can verify the release upload at https://pypi.org/manage/project/detext/releases/
 
