@@ -11,6 +11,10 @@ NOTE: this guide is for DeText owners to publish new versions to PyPi
     ```shell script
     pip install twine
     ```
+1. Increment `VERSION` in `setup.py`. You can checkout previous versions at https://pypi.org/manage/project/detext/releases/ and determine the new release version. 
+    
+    Please follow the following best practices for versioning: Breaking changes are indicated by increasing the major number (high risk), new non-breaking features increment the minor number (medium risk) and all other non-breaking changes increment the patch number (lowest risk). 
+
 1. Upload the distributions
     ```shell script
     bash pypi_release.sh 
