@@ -11,7 +11,7 @@ PYTHONPATH=../../src python ../../src/detext/run_detext.py \
 --filter_window_sizes 1 2 3 \
 --num_filters 50 \
 --num_hidden 100 \
---num_train_steps 10 \
+--num_train_steps 50 \
 --num_units 32 \
 --num_wide 2 \
 --num_wide_sp 100 \
@@ -21,7 +21,7 @@ PYTHONPATH=../../src python ../../src/detext/run_detext.py \
 --all_metrics ndcg@10 precision@1 \
 --random_seed 11 \
 --steps_per_stats 1 \
---steps_per_eval 2 \
+--steps_per_eval 10 \
 --num_eval_rounds 10 \
 --test_batch_size 2 \
 --train_batch_size 2 \
