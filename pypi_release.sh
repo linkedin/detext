@@ -1,8 +1,37 @@
 #!/bin/bash
-# Make sure the VERSION in setup.py is updated before running the script
+# Make sure all changes are committed before running this script for releasing.
+# See RELEASING.md for more instructions on running the script for releasing.
+
+# Usage:
+# bash pypi_release.sh <part>
+# <part> must equal to "patch", "minor", or "major".
+# e.g.:
+# 0.0.1 -> 0.0.2:
+# bash pypi_release.sh patch
+# 0.0.1 -> 0.1.0:
+# bash pypi_release.sh minor
+# 0.0.1 -> 1.0.0:
+# bash pypi_release.sh major
+
+# Please follow the following best practices for versioning:
+# breaking changes are indicated by increasing the major number (high risk),
+# new non-breaking features increment the minor number (medium risk)
+# all other non-breaking changes increment the patch number (lowest risk).
 
 # Exit when any command fails
 set -e
+
+# Cleaning up dist directory for old releases
+rm -rf dist/
+
+# Check input argument <part>
+if [ "$1" != "patch" ] && [ "$1" != "patch" ] && [ "$1" != "patch" ]; then
+  echo "Must include correct <patch> argument. Eg., ash pypi_release.sh patch"
+  exit
+fi
+# Increment version with bumpversion. Version format: {major}.{minor}.{patch}
+echo "Incrementing DeText $1 version."
+bump2version "$1"
 
 # Build the source distribution
 echo "******** Preparing pypi package..."

@@ -6,13 +6,6 @@ this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-# Update (increment) the version number before releasing. Checkout published versions at
-# https://pypi.org/manage/project/detext/releases/
-# Please follow the following best practices for versioning: Breaking changes are indicated by increasing the
-# major number (high risk), new non-breaking features increment the minor number (medium risk) and all other
-# non-breaking changes increment the patch number (lowest risk).
-VERSION = '2.0.8'
-
 setuptools.setup(
     name='detext',
     long_description=long_description,
@@ -22,11 +15,12 @@ setuptools.setup(
                  "Intended Audience :: Developers",
                  "License :: OSI Approved"],
     license='BSD-2-CLAUSE',
-    version=VERSION,
+    # DO NOT CHANGE: version should be incremented by bump2version when releasing. See pypi_release.sh
+    version='2.0.8',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
-    install_requires=['numpy<1.17', 'smart-arg==0.1.1', 'tensorflow==1.14.0', 'tensorflow_ranking==0.1.4', 'gast==0.2.2'],
+    install_requires=['numpy<1.17', 'smart-arg==0.1.1', 'tensorflow==1.14.0', 'tensorflow_ranking==0.1.4', 'gast==0.2.2', 'bump2version==1.0.0', 'twine==3.2.0'],
     tests_require=[
         'pytest',
     ])
