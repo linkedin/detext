@@ -25,7 +25,7 @@ set -e
 rm -rf dist/
 
 # Check input argument <part>
-if [ "$1" != "patch" ] && [ "$1" != "patch" ] && [ "$1" != "patch" ]; then
+if [ "$1" != "patch" ] && [ "$1" != "minor" ] && [ "$1" != "major" ]; then
   echo "Must include correct <patch> argument. Eg., ash pypi_release.sh patch"
   exit
 fi
