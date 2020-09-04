@@ -48,10 +48,7 @@ The `.bumpversion.cfg` is the single source of truth for versioning DeText. You 
 ### Step 2: merge version changes
 Running the releasing script automatically creates a new commit that includes the version update and a new tag. 
 
-You can verify the new releases at https://pypi.org/project/detext/ and https://pypi.org/project/li-detext/. If the packages are successfully published, create a PR and merge to master.
-
-
-You can verify the release upload at https://pypi.org/project/detext/ and https://pypi.org/project/li-detext/
+You can verify the new releases at https://pypi.org/project/detext/ and https://pypi.org/project/detext-nodep/. If the packages are successfully published, create a PR and merge to master.
 
 
 ### Step 3: add a Tag
