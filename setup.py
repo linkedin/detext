@@ -20,7 +20,7 @@ setuptools.setup(
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
-    install_requires=['numpy<1.17', 'smart-arg==0.1.1', 'tensorflow==1.14.0', 'tensorflow_ranking==0.1.4', 'gast==0.2.2', 'bump2version==1.0.0', 'twine==3.2.0'],  # noqa: E501
+    install_requires=['numpy<1.17', 'smart-arg==0.1.1', 'tensorflow==1.15.4', 'tensorflow_ranking==0.1.4', 'gast==0.2.2', 'bump2version==1.0.0', 'twine==3.2.0'],  # noqa: E501
     tests_require=[
         'pytest',
     ])
