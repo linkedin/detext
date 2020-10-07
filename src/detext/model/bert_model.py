@@ -41,7 +41,7 @@ class BertModel(object):
         If query is None, the returned query_ftrs is also None
         :return query_ftrs,doc_ftrs,usr_ftrs  shape(query_ftrs)=[batch_size, num_units],
             shape(doc_ftrs)=[batch_size, max_group_size, num_doc_fields, num_units],
-            shape(usr_ftrs)=[batch_size, num_doc_fields, num_units]
+            shape(usr_ftrs)=[batch_size, num_usr_fields, num_units]
         """
         hparams = self.hparams
         query = self.query
