@@ -11,7 +11,7 @@ DeText: A Deep Neural Text Understanding Framework
 **DeText** is a **De**ep **Text** understanding framework for NLP related ranking, classification, and language generation tasks.  It leverages semantic matching using deep neural networks to 
 understand member intents in search and recommender systems. 
 As a general NLP framework, currently DeText can be applied to many tasks, 
-including search & recommendation ranking, multi-class classification and query understanding tasks.
+including search & recommendation ranking, multi-class classification and query understanding tasks. More details can be found in this ![blog post](https://engineering.linkedin.com/blog/2020/open-sourcing-detext)
 
 ## Highlight
 Design principles for DeText framework:
