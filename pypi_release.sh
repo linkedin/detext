@@ -20,7 +20,6 @@
 
 # Exit when any command fails
 set -e
-
 # Cleaning up dist directory for old releases
 rm -rf dist/
 
@@ -29,6 +28,10 @@ if [ "$1" != "patch" ] && [ "$1" != "minor" ] && [ "$1" != "major" ]; then
   echo "Must include correct <patch> argument. Eg., ash pypi_release.sh patch"
   exit
 fi
+
+# Install/upgrade needed pypi packages
+pip install -U bump2version twine
+
 # Increment version with bumpversion. Version format: {major}.{minor}.{patch}
 echo "Incrementing DeText $1 version."
 bump2version "$1"
