@@ -102,8 +102,8 @@ Please cite DeText in your publications if it helps your research:
                Sida Wang and 
                Huiji Gao and
                Bo Long},
-  title     = {DeText: A Deep Neural Text Understanding Framework},
-  url       = {https://github.com/linkedin/detext},
+  title     = {DeText: A Deep NLP Framework for Intelligent Text Understanding},
+  url       = {https://engineering.linkedin.com/blog/2020/open-sourcing-detext},
   year      = {2020}
 }
 
