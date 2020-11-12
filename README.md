@@ -124,7 +124,7 @@ Please cite DeText in your publications if it helps your research:
                Bo Long and 
                Liang Zhang and
                Bee-Chung Chen and
-               Deepak},
+               Deepak Agarwal},
   title     = {Deep Natural Language Processing for Search and Recommender Systems},
   booktitle = {ACM SIGKDD 2019},
   year      = {2019}
@@ -144,6 +144,22 @@ Please cite DeText in your publications if it helps your research:
                Deepak Agarwal},
   title     = {DeText: A Deep Text Ranking Framework with BERT},
   booktitle = {ACM CIKM 2020},
+  year      = {2020}
+}
+
+@inproceedings{jia-long20,
+  author    = {Jun Jia and
+               Bo Long and
+               Huiji Gao and 
+               Weiwei Guo and 
+               Jun Shi and
+               Xiaowei Liu and
+               Mingzhou Zhou and
+               Zhoutong Fu and
+               Sida Wang and
+               Sandeep Kumar Jha},
+  title     = {Deep Learning for Search and Recommender Systems in Practice},
+  booktitle = {ACM SIGKDD 2020},
   year      = {2020}
 }
 
