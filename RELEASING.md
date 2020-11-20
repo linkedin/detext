@@ -2,7 +2,7 @@ Release a New Version of DeText
 =========
 NOTE: this guide is for DeText owners to publish new versions to PyPi
 
- Make sure you have the correct permission to release DeText packages. Only owners and maintainers can upload new releases for DeText. Check more details at https://pypi.org/project/detext/.
+Make sure you have the correct permission to release DeText packages. Only owners and maintainers can upload new releases for DeText. Check more details at https://pypi.org/project/detext/.
 
 
 ## When to release
