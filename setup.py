@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 requires = ['numpy<1.17',
             'smart-arg==0.2.12',
-            'tensorflow==1.14.0',
+            'tensorflow==2.3.1',
             'tensorflow_ranking==0.1.4']
 setuptools.setup(
     name='detext',
