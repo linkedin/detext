@@ -2,12 +2,13 @@
 # See LICENSE in the project root for license information.
 import setuptools
 from os import path
+
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 requires = ['numpy<1.17',
-            'smart-arg==0.2.12',
+            'smart-arg==0.4',
             'tensorflow==1.14.0',
             'tensorflow_ranking==0.1.4']
 setuptools.setup(

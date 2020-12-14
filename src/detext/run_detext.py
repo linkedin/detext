@@ -27,10 +27,11 @@ class DetextArg(NamedTuple):
     As a general NLP framework, currently DeText can be applied to many tasks,
     including search & recommendation ranking, multi-class classification and query understanding tasks.
     """
-    #  kwargs utility function for split a str to a List, provided for backward compatibilities
-    #  Please use built-in List parsing support when adding new arguments
-    _comma_split_list = lambda t: {'type': lambda s: [t(item) for item in s.split(',')] if ',' in s else t(s), 'nargs': None}  # noqa: E731
-
+    #  A utility function for smart-arg to split a str to a List and serialize back to str.
+    #  Please use smart-arg built-in Seq support for new arguments, use this for backward compatibilities only.
+    _comma_split_list = lambda t: {'nargs': None,  # noqa: E731
+                                   'type': lambda s: [t(item) for item in s.split(',')] if ',' in s else t(s),
+                                   '_serialization': lambda a_seq: (','.join((str(item) for item in a_seq)),)}
     feature_names: List[str]  # Feature names.
     __feature_names = _comma_split_list(str)
 
@@ -132,7 +133,7 @@ class DetextArg(NamedTuple):
     add_first_dim_for_query_placeholder: bool = False  # Whether to add a batch dimension for query and usr_* placeholders. This shall be set to True if the query field is used as document feature in model serving.# noqa: E501
     add_first_dim_for_usr_placeholder: bool = False  # Whether to add a batch dimension for query and usr_* placeholders. This shall be set to True if usr fields are used document feature in model serving.# noqa: E501
 
-    tokenization: str = 'punct'  # The tokenzation performed for data preprocessing. Currently support: punct/plain(no split). Note that this should be set correctly to ensure consistency for savedmodel.# noqa: E501
+    tokenization: str = 'punct'  # The tokenization performed for data preprocessing. Currently support: punct/plain(no split). Note that this should be set correctly to ensure consistency for savedmodel.# noqa: E501
     __tokenization = {'choices': ['plain', 'punct']}
 
     resume_training: bool = False  # Whether to resume training from checkpoint in out_dir.
