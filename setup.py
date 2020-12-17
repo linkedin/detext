@@ -21,7 +21,7 @@ setuptools.setup(
                  "License :: OSI Approved"],
     license='BSD-2-CLAUSE',
     # DO NOT CHANGE: version should be incremented by bump2version when releasing. See pypi_release.sh
-    version='2.0.9',
+    version='2.1.1',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,

@@ -14,7 +14,7 @@ Releasing a new version for adding new features and bug fixes. Minor updates to 
 ### Step 1: increment the version and publish to PyPi
 Releasing the package involves:
 * Incrementing the version of DeText
-* Publishing to pypi: Note that this prepares and uploads two packages (`detext` and `li_detext`) with the same version. `detext` is the oss package for public use. `li_detext` is for LI internal use only.
+* Publishing to pypi: Note that this prepares and uploads two packages (`detext` and `detext-nodep`) with the same version. `detext` is the oss package for public use. `detext-nodep` is for LI internal use only, without any dependencies such as `tensorflow` pulled in.
 
 Please ensure all changes are merged before releasing. Use the following command to release a new package:
 ```shell script
