@@ -47,7 +47,7 @@ cp setup.py setup.py.tmp
 # Rename the pypi package name
 sed -i "" "s/name='detext'/name='detext-nodep'/" setup.py
 # Remove install_requires entries
-sed -i "" "s/install_requires=\[.*\]/install_requires=[]/g" setup.py
+sed -i "" "s/install_requires=.*/install_requires=[],/g" setup.py
 python setup.py sdist
 # Recover original setup.py
 rm setup.py
