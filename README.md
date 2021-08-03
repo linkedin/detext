@@ -1,4 +1,4 @@
-![Python 3.6 application](https://github.com/linkedin/detext/workflows/Python%203.6%20application/badge.svg) ![Python 3.7 application](https://github.com/linkedin/detext/workflows/Python%203.7%20application/badge.svg)  ![tensorflow](https://img.shields.io/badge/tensorflow-1.14.0-green.svg) ![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)
+![Python 3.7 application](https://github.com/linkedin/detext/workflows/Python%203.7%20application/badge.svg)  ![tensorflow](https://img.shields.io/badge/tensorflow-2.4-green.svg) ![License](https://img.shields.io/badge/License-BSD%202--Clause-orange.svg)
 
 DeText: A Deep Neural Text Understanding Framework
 ========
@@ -8,13 +8,14 @@ DeText: A Deep Neural Text Understanding Framework
 **Relax like a sloth, let DeText do the understanding for you**
 
 ## What is it
-**DeText** is a **De**ep **Text** understanding framework for NLP related ranking, classification, and language generation tasks.  It leverages semantic matching using deep neural networks to 
+**DeText** is a <b>_De_</b>ep **_Text_** understanding framework for NLP related ranking, classification, and language generation tasks.  It leverages semantic matching using deep neural networks to 
 understand member intents in search and recommender systems. 
-As a general NLP framework, currently DeText can be applied to many tasks, 
-including search & recommendation ranking, multi-class classification and query understanding tasks. More details can be found in this [blog post](https://engineering.linkedin.com/blog/2020/open-sourcing-detext).
+As a general NLP framework, DeText can be applied to many tasks, 
+including search & recommendation ranking, multi-class classification and query understanding tasks.
+
+More details can be found in the [LinkedIn Engineering blog post](https://engineering.linkedin.com/blog/2020/open-sourcing-detext).
 
 ## Highlight
-Design principles for DeText framework:
 * Natural language understanding powered by state-of-the-art deep neural networks
   * Automatic feature extraction with deep models
   * End-to-end training
@@ -25,16 +26,14 @@ Design principles for DeText framework:
   * User defined source/target fields
   * Configurable network structure (layer sizes and #layers)
   * Tunable hyperparameters
-...
-  
-* Reaching a good balance between effectiveness and efficiency to meet the industry requirements.
+* A good balance between effectiveness and efficiency to meet the industry requirements.
 
 ## The framework
 The DeText framework contains multiple components:
 
 **Word embedding layer**.  It converts the sequence of words into a d by n matrix.
 
-**CNN/BERT/LSTM for text encoding layer**.  It takes into the word embedding matrix as input, and maps the text data into a fixed length embedding.  It is worth noting that we adopt the representation based methods over the interaction based methods.  The main reason is the computational complexity: The time complexity of interaction based methods is at least O(mnd), which is one order higher than the representation based methods max(O(md), O(nd).
+**CNN/BERT/LSTM for text encoding layer**.  It takes into the word embedding matrix as input, and maps the text data into a fixed length embedding.
 
 **Interaction layer**.  It generates deep features based on the text embeddings.  Many options are provided, such as concatenation, cosine similarity, etc.
 
@@ -47,7 +46,7 @@ It is an end-to-end model where all the parameters are jointly updated to optimi
 ![](detext_model_architecture.png) 
 
 ## Model Flexibility
-DeText is a general ranking framework that offers great flexibility for clients to build customized networks for their own use cases:
+DeText offers great flexibility for clients to build customized networks for their own use cases:
 
 **LTR/classification layer**: in-house LTR loss implementation, or tf-ranking LTR loss, multi-class classification support.
 
@@ -55,7 +54,7 @@ DeText is a general ranking framework that offers great flexibility for clients 
 
 **Interaction layer**: support Cosine Similarity, Outer Product, Hadamard Product, and Concatenation.
 
-**Text embedding layer**: support CNN, BERT, LSTM-Language-Model with customized parameters on filters, layers, dimensions, etc.
+**Text embedding layer**: support CNN, BERT, LSTM with customized parameters on filters, layers, dimensions, etc.
 
 **Continuous feature normalization**: element-wise scaling, value normalization.
 
@@ -64,36 +63,40 @@ DeText is a general ranking framework that offers great flexibility for clients 
 All these can be customized via hyper-parameters in the DeText template. Note that tf-ranking is supported in the DeText framework, i.e., users can choose the LTR loss and metrics defined in DeText.
 
 ## How to use it
-### Setup dev environment
-
-1. Create & source your virtualenv
+### Dev environment set up
+1. Create your virtualenv (Python version >= 3.7)
+    ```shell script
+    VENV_DIR = <your venv dir>
+    python3 -m venv $VENV_DIR  # Make sure your python version >= 3.7
+    source $VENV_DIR/bin/activate  # Enter the virtual environment
+    ```
+1. Upgrade pip and setuptools version
+    ```shell script
+    pip3 install -U pip
+    pip3 install -U setuptools
+    ```
 1. Run setup for DeText:
+    ```shell script
+    pip install . -e
+    ```
+1. Verify environment setup through pytest. If all tests pass, the environment is correctly set up
+    ```shell script
+    pytest 
+    ```
+1. Refer to the training manual ([TRAINING.md](TRAINING.md)) to find information about customizing the model:
+    * Training data format and preparation
+    * Key parameters to customize and train DeText models
+    * Detailed information about all DeText training parameters for full customization
+1. Train a model using DeText (e.g., [run_detext.sh](test/resources/run_detext.sh))
 
-```bash
-python setup.py develop
-```
 
-### Run tests
+### Tutorial Demo
+If you would like a simple try out of the library, you can refer to the following notebooks for tutorial
+`notebooks/text_classification_demo.ipynb` shows how to use DeText to train a multi-class text classification model. A public query intent classification dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
+`notebooks/autocompletion.ipynb` shows how to use DeText to train a text ranking model. A public query auto completion dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
 
-Run all tests:
 
-```bash
-pytest 
-```
-
-### Checkout the demo notebooks
-`notebooks/text_classification_demo.ipynb` shows how to use DeText to train a production ready multi-class text classification model. A public query intent classification dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
-
-\[TODO\] Add a ranking demo notebook
-
-### DeText training manual
-
-Users have full control for custom designing DeText models. In the training manual ([TRAINING.md](TRAINING.md)), users can find information about the following:
-* Training data format and preparation
-* Key parameters to customize and train DeText models
-* Detailed information about all DeText training parameters for full customization
-
-## **References**
+## **Citation**
 Please cite DeText in your publications if it helps your research:
 ```
 @manual{guo-liu20,
@@ -183,11 +186,3 @@ Please cite DeText in your publications if it helps your research:
   year      = {2020}
 }
 ```
-
-## Contributing
-
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
-
-## License
-
-This project is licensed under the BSD 2-CLAUSE LICENSE - see the [LICENSE.md](LICENSE.md) file for details
