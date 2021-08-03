@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 TF_VERSION_QUANTIFIER = '>=2.4,<2.5'
-PACKAGES = ['smart-arg==0.1.1', 'bump2version==1.0.0', 'twine==3.2.0', f'tf-models-official{TF_VERSION_QUANTIFIER}',
+PACKAGES = ['smart-arg==0.4', 'bump2version==1.0.0', 'twine==3.2.0', f'tf-models-official{TF_VERSION_QUANTIFIER}',
             f'tensorflow{TF_VERSION_QUANTIFIER}', f'tensorflow-text{TF_VERSION_QUANTIFIER}', 'tensorflow_ranking',
             'future<0.14']
 
