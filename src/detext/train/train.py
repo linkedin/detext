@@ -1,398 +1,241 @@
+import os
+from functools import partial
+
+import detext.train.train_flow_helper
+import detext.train.train_model_helper
+import detext.utils.distributed_utils
 import tensorflow as tf
-import tensorflow_ranking as tfr
-from os.path import join as path_join
-
-from detext.model.deep_match import DeepMatch
-from detext.model.lambdarank import LambdaRank
-from detext.train import metrics
-from detext.train import optimization, train_helper
-from detext.train.loss import compute_softmax_loss, compute_sigmoid_cross_entropy_loss, \
-    compute_regularization_penalty
-from detext.utils import vocab_utils, executor_utils
-from detext.utils.best_checkpoint_copier import BestCheckpointCopier
+from absl import logging
+from detext.train import train_flow_helper
+from detext.train.metrics import get_metric_fn_lst
+from detext.train.optimization import clip_by_global_norm
+from detext.train.train_flow_helper import run_evaluation, train_step_fn, eval_step_fn, write_training_summary, export_best_model, set_random_seed
+from official.utils.misc import distribution_utils, keras_utils
 
 
-def train(hparams, input_fn):
-    """
-    Main function for train/evaluate DeText ranking model
-    :param hparams: hparams
-    :param input_fn: input function to create train/eval specs
-    :return:
-    """
-    if hparams.use_horovod is True:
-        import horovod.tensorflow as hvd
-    else:
-        hvd = None
-    train_strategy = tf.contrib.distribute.ParameterServerStrategy()
-    estimator = get_estimator(hparams, strategy=train_strategy)
+def run_customized_training_loop(
+        strategy,
+        model_fn,
+        loss_fn,
+        out_dir,
+        train_input_fn,
+        eval_input_fn,
+        test_input_fn,
+        steps_per_stats,
+        num_train_steps,
+        steps_per_eval,
+        run_eagerly,
+        explicit_allreduce,
+        pmetric_name,
+        all_metric_fn_lst,
+        keep_checkpoint_max,
+        feature_type2name,
+        optimizer_fn,
+        bert_optimizer_fn,
+        task_ids,
+        task_weights,
+        num_eval_steps,
+        scale_loss=True,
+        custom_callbacks=None,
+        pre_allreduce_callbacks=None,
+        post_allreduce_callbacks=None):
+    """Run DeText model training using low-level API
 
-    # Set model export config for evaluator or primary worker of horovod
-    exporter_list = None
-    if not hvd or hvd.rank() == 0:
-        best_model_name = 'best_' + hparams.pmetric
-        # Exporter to save best (in terms of pmetric) checkpoint in the folder [best_model_name],
-        # and export to savedmodel for prediction.
-        best_checkpoint_exporter = BestCheckpointCopier(
-            name=best_model_name,
-            serving_input_receiver_fn=lambda: serving_input_fn(hparams),
-            checkpoints_to_keep=1,  # keeping the best checkpoint
-            exports_to_keep=1,  # keeping the best savedmodel
-            pmetric=f'metric/{hparams.pmetric}',
-            compare_fn=lambda x, y: x.score > y.score,  # larger metric better
-            sort_reverse=True)
-        exporter_list = [best_checkpoint_exporter]
+    Reference: official/nlp/bert/model_training_utils.py
 
-    # Handle sync distributed training case via use_horovod
+    :param strategy: Distribution strategy on which to run low level training loop.
+    :param model_fn: Function that returns a tuple (model, sub_model). Caller of this function should add optimizer to the `model` via calling
+      `model.compile()` API or manually setting `model.optimizer` attribute.
+    :param loss_fn: Function with signature func(labels, logits) and returns a loss tensor.
+    :param scale_loss: Whether to divide the raw loss by number of replicas before gradients calculation.
+    :param keep_checkpoint_max: Maximum checkpoints to keep.
+    :param feature_type2name: Mapping from feature types to feature names.
+    :param out_dir: Model directory used during training for restoring/saving model weights.
+    :param train_input_fn: Function that returns a tf.data.Dataset used for training.
+    :param eval_input_fn: Function that returns evaluation dataset
+    :param test_input_fn: Function that returns test dataset
+    :param num_train_steps: Total training steps.
+    :param steps_per_eval: Number of steps to run per eval. At the end of each eval, model checkpoint will be saved and evaluation will be conducted
+      if evaluation dataset is provided.
+    :param steps_per_stats: Number of steps per graph-mode loop. In order to reduce communication in eager context, training logs are printed every
+      steps_per_stats.
+    :param task_ids Task ids related to multi-task training
+    :param task_weights Task weights related to multi-task training
+    :param optimizer_fn: Function to create optimizer for non-bert parameters
+    :param bert_optimizer_fn: Function to create optimzier for bert parameters
+    :param pmetric_name: Primary metric name. Model with best pmetric on evaluation dataset will be exported in pb format
+    :param all_metric_fn_lst: A list of metrics functions that return a Keras Metric object to record evaluation result using evaluation dataset
+    :param custom_callbacks: A list of Keras Callbacks objects to run during training. More specifically, `on_batch_begin()`, `on_batch_end()`,
+      methods are invoked during training.
+    :param run_eagerly: Whether to run model training in pure eager execution. This should be disable for TPUStrategy.
+    :param explicit_allreduce: Whether to explicitly perform gradient allreduce, instead of relying on implicit allreduce in optimizer.apply_gradients().
+      default is False. For now, if training using FP16 mixed precision, explicit allreduce will aggregate gradients in FP16 format. For TPU and
+      GPU training using FP32, explicit allreduce will aggregate gradients in FP32 format.
+    :param pre_allreduce_callbacks: A list of callback functions that takes gradients and model variables pairs as input, manipulate them, and returns
+      a new gradients and model variables paris. The callback functions will be invoked in the list order and before gradients are allreduced.
+      With mixed precision training, the pre_allreduce_allbacks will be applied on scaled_gradients. Default is no callbacks. Only used when
+      explicit_allreduce=True.
+    :param post_allreduce_callbacks: A list of callback functions that takes gradients and model variables pairs as input, manipulate them, and
+      returns a new gradients and model variables paris. The callback functions will be invoked in the list order and right before gradients
+      are applied to variables for updates. Default is no callbacks. Only used when explicit_allreduce=True.
 
-        # Horovod: BroadcastGlobalVariablesHook broadcasts initial variable states from
-        # rank 0 to all other processes. This is necessary to ensure consistent
-        # initialization of all workers when training is started with random weights or
-        # restored from a checkpoint.
-    bcast_hook = [hvd.BroadcastGlobalVariablesHook(0)] if hvd else None
-
-    def input_fn_common(pattern, batch_size=hparams.test_batch_size, mode=tf.estimator.ModeKeys.EVAL, hvd_info=None):
-        return lambda: input_fn(
-            input_pattern=pattern, metadata_path=hparams.metadata_path, batch_size=batch_size, mode=mode,
-            vocab_table=vocab_utils.read_tf_vocab(hparams.vocab_file, hparams.UNK), hvd_info=hvd_info,
-            vocab_table_for_id_ftr=vocab_utils.read_tf_vocab(hparams.vocab_file_for_id_ftr, hparams.UNK_FOR_ID_FTR),
-            feature_names=hparams.feature_names, CLS=hparams.CLS, SEP=hparams.SEP, PAD=hparams.PAD,
-            PAD_FOR_ID_FTR=hparams.PAD_FOR_ID_FTR, max_len=hparams.max_len, min_len=hparams.min_len,
-            cnn_filter_window_size=max(hparams.filter_window_sizes) if hparams.ftr_ext == 'cnn' else 0)
-
-    # Create TrainSpec for model training
-    train_spec = tf.estimator.TrainSpec(
-        input_fn=input_fn_common(hparams.train_file,
-                                 batch_size=hparams.train_batch_size,
-                                 mode=tf.estimator.ModeKeys.TRAIN,
-                                 # Add horovod information if applicable
-                                 hvd_info=hparams.hvd_info if hvd else None),
-        hooks=bcast_hook,
-        max_steps=hparams.num_train_steps)
-
-    eval_spec = tf.estimator.EvalSpec(
-        input_fn=input_fn_common(hparams.dev_file),
-        exporters=exporter_list,
-        steps=None,
-        # Set throttle to 0 to start evaluation right away.
-        # (Note: throttle_secs has to be 0 for horovod:
-        # https://github.com/horovod/horovod/issues/182#issuecomment-533897757)
-        throttle_secs=0,
-        start_delay_secs=10)
-
-    # Training and evaluation with dev set
-    tf.estimator.train_and_evaluate(
-        estimator=estimator,
-        train_spec=train_spec,
-        eval_spec=eval_spec)
-    print("***** Training finished. *****")
-
-    # Evaluation with test set: create an estimator with the best_checkpoint_dir to load the best model
-    task_type = executor_utils.get_executor_task_type()
-    do_evaluate = task_type == executor_utils.EVALUATOR or task_type == executor_utils.LOCAL_MODE
-    if (not hvd and do_evaluate) or (hvd and hvd.rank() == 0):
-        best_checkpoint_dir = path_join(hparams.out_dir, best_model_name)
-        estimator_savedmodel = get_estimator(hparams, strategy=train_strategy, best_checkpoint=best_checkpoint_dir)
-        result = estimator_savedmodel.evaluate(input_fn=input_fn_common(hparams.test_file))
-        print("\n***** Evaluation on test set with best exported model: *****")
-        for key in sorted(result.keys()):
-            print("%s = %s" % (key, str(result[key])))
-
-
-def get_estimator(hparams, strategy, best_checkpoint=None):
-    config_kwargs = {
-        'save_summary_steps': hparams.steps_per_stats,
-        'save_checkpoints_steps': hparams.steps_per_eval,
-        'log_step_count_steps': hparams.steps_per_stats,
-        'keep_checkpoint_max': hparams.keep_checkpoint_max
-    }
-    # Handle sync distributed training case via use_horovod
-    if hparams.use_horovod:
-        import horovod.tensorflow as hvd
-        # Adjust config for horovod
-        session_config = tf.ConfigProto()
-        session_config.allow_soft_placement = True
-        # Pin each worker to a GPU
-        session_config.gpu_options.visible_device_list = str(hvd.local_rank())
-        config_kwargs['session_config'] = session_config
-
-        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir if hvd.rank() == 0 else None
-    # Handle single gpu or async distributed training case
-    else:
-        # TODO:
-        # In the future we will support both sync training and async training on TOnY.
-        # Now the sync training can run on kubernetes cluster using hvd lib.
-        # 1. async training.
-        # train_distribute=tf.contrib.distribute.ParameterServerStrategy()  #async strategy.
-        # 2. sync strategy
-        # train_distribute=tf.distribute.experimental.MultiWorkerMirroredStrategy() #sync strategy,
-        # and remember to remove ps in tony params when use sync strategy,
-        # Also note that MultiWorkerMirroredStrategy doesn't support bert-adam optimizer, but can use adam optimizer
-        config_kwargs['train_distribute'] = strategy
-        model_dir = best_checkpoint if best_checkpoint is not None else hparams.out_dir
-
-    config = tf.estimator.RunConfig(**config_kwargs)
-    # Build the estimator
-    return tf.estimator.Estimator(model_fn=model_fn, model_dir=model_dir, params=hparams, config=config)
-
-
-def serving_input_fn(hparams):
-    """
-    Creates a serving input function used by inference in model export.
-    :param hparams: hparams
-    :return: A ServingInputReceiver function that defines the inference requests and prepares for the model.
+    :return Trained model.
     """
 
-    # Define placeholders and features
-    doc_feature_names = [df for df in hparams.feature_names if df.startswith('doc_')]
-    usr_feature_names = [df for df in hparams.feature_names if df.startswith('usr_')]
-    doc_fields, doc_placeholders = train_helper.get_doc_fields(hparams)
-    usr_fields, usr_placeholders = train_helper.get_usr_fields(hparams)
+    assert tf.executing_eagerly(), 'Outer training flow should be executed in eager mode'
 
-    doc_id_feature_names = [df for df in hparams.feature_names if df.startswith('docId_')]
-    usr_id_feature_names = [df for df in hparams.feature_names if df.startswith('usrId_')]
-    doc_id_fields, doc_id_placeholders = train_helper.get_doc_id_fields(hparams)
-    usr_id_fields, usr_id_placeholders = train_helper.get_usr_id_fields(hparams)
+    train_iterator = train_flow_helper.get_input_iterator(train_input_fn, strategy)
+    with distribution_utils.get_strategy_scope(strategy):
+        # To correctly place the model weights on accelerators, model and optimizer should be created in scope.
+        model = model_fn()
+        optimizer = optimizer_fn()
+        bert_optimizer = bert_optimizer_fn()
 
-    query, query_placeholder = train_helper.get_query(hparams)
-    wide_ftr_placeholder, wide_ftrs = train_helper.create_placeholder_for_ftrs(
-        "wide_ftr_placeholder", [None, hparams.num_wide], tf.float32, 'wide_ftrs', hparams.feature_names)
-    wide_ftr_sp_idx_placeholder, wide_ftrs_sp_idx = train_helper.create_placeholder_for_ftrs(
-        "wide_ftr_sp_idx_placeholder", [None, None], tf.int32, 'wide_ftrs_sp_idx', hparams.feature_names)
-    wide_ftr_sp_val_placeholder, wide_ftrs_sp_val = train_helper.create_placeholder_for_ftrs(
-        "wide_ftr_sp_val_placeholder", [None, None], tf.float32, 'wide_ftrs_sp_val', hparams.feature_names)
-    uid_placeholder, uid = train_helper.create_placeholder_for_ftrs(
-        "uid_placeholder", [], tf.int64, 'uid', hparams.feature_names, tf.constant([-1], dtype=tf.int64))
-    weight_placeholder, weight = train_helper.create_placeholder_for_ftrs(
-        "weight_placeholder", [], tf.float32, 'weight', hparams.feature_names, tf.constant([1.0], dtype=tf.float32))
-    label_placeholder, label = train_helper.create_placeholder_for_ftrs(
-        "label_placeholder", [None], tf.float32, 'label', hparams.feature_names)
-    task_id_placeholder, task_id = train_helper.create_placeholder_for_ftrs(
-        "task_id_placeholder", [], tf.int64, 'task_id', hparams.feature_names)
-    # Placeholder tensors
-    # Default uid as feature for detext integration, will be -1 by default if not present in data
-    feature_placeholders = {'uid': uid_placeholder, 'weight': weight_placeholder, 'label': label_placeholder}
-    # Features to feed into model (creating model_fn)
-    features = {'uid': uid, 'weight': weight, 'label': label}
-    # Add objects into pleaceholders and features
-    for fname in hparams.feature_names:
-        if fname == 'query':
-            feature_placeholders[fname] = query_placeholder
-            features[fname] = query
-        elif fname.startswith('doc_'):
-            if fname not in features:
-                for fi in range(hparams.num_doc_fields):
-                    features[doc_feature_names[fi]] = doc_fields[fi]
-                    feature_placeholders[doc_feature_names[fi]] = doc_placeholders[fi]
-        elif fname.startswith('usr_'):
-            if fname not in features:
-                for fi in range(hparams.num_usr_fields):
-                    features[usr_feature_names[fi]] = usr_fields[fi]
-                    feature_placeholders[usr_feature_names[fi]] = usr_placeholders[fi]
-        elif fname.startswith('docId_'):
-            if fname not in features:
-                for fi in range(hparams.num_doc_id_fields):
-                    features[doc_id_feature_names[fi]] = doc_id_fields[fi]
-                    feature_placeholders[doc_id_feature_names[fi]] = doc_id_placeholders[fi]
-        elif fname.startswith('usrId_'):
-            if fname not in features:
-                for fi in range(hparams.num_usr_id_fields):
-                    features[usr_id_feature_names[fi]] = usr_id_fields[fi]
-                    feature_placeholders[usr_id_feature_names[fi]] = usr_id_placeholders[fi]
-        elif fname == 'wide_ftrs':
-            feature_placeholders[fname] = wide_ftr_placeholder
-            features[fname] = wide_ftrs
-        elif fname == 'wide_ftrs_sp_val':
-            feature_placeholders[fname] = wide_ftr_sp_val_placeholder
-            features[fname] = wide_ftrs_sp_val
-        elif fname == 'wide_ftrs_sp_idx':
-            feature_placeholders[fname] = wide_ftr_sp_idx_placeholder
-            features[fname] = wide_ftrs_sp_idx
-        elif fname == 'task_id':
-            feature_placeholders[fname] = task_id_placeholder
-            features[fname] = task_id
-        elif fname == 'label' or fname == 'weight' or fname == 'uid':
-            continue
-        else:
-            raise ValueError("Unsupported feature_to_add argument: %s" % fname)
+        # Get metrics
+        train_loss_metric = tf.keras.metrics.Mean('training_loss', dtype=tf.float32)
+        all_metrics = [metric_fn() for metric_fn in all_metric_fn_lst] if all_metric_fn_lst else []
+        pmetric = list(filter(lambda x: x.name == pmetric_name, all_metrics))[0]
 
-    return tf.estimator.export.ServingInputReceiver(
-        features, feature_placeholders)
+        # Create summary writers
+        summary_dir = train_flow_helper.create_summary_dir(strategy, out_dir)
+        eval_summary_writer = tf.summary.create_file_writer(os.path.join(summary_dir, 'eval'))
+        train_summary_writer = train_flow_helper.create_train_summary_writer(os.path.join(summary_dir, 'train'), steps_per_stats)
+
+        def train_step(iterator):
+            """Performs a distributed training step """
+
+            def _train_step(inputs):
+                train_step_fn(inputs, model, loss_fn, scale_loss, strategy, explicit_allreduce, feature_type2name,
+                              pre_allreduce_callbacks, post_allreduce_callbacks, optimizer, bert_optimizer, task_ids, task_weights,
+                              train_loss_metric)
+
+            strategy.run(_train_step, args=(next(iterator),))
+
+        def eval_step(iterator):
+            """Calculates evaluation metrics on distributed devices."""
+
+            def _eval_step(inputs):
+                eval_step_fn(inputs, model, feature_type2name, all_metrics)
+
+            strategy.run(_eval_step, args=(next(iterator),))
+
+        # Use AutoGraph for efficiency if not in eager mode
+        if not run_eagerly:
+            train_step = tf.function(train_step)
+            eval_step = tf.function(eval_step)
+
+        # Manage checkpoints
+        checkpoint = tf.train.Checkpoint(model=model, optimizer=optimizer, bert_optimizer=bert_optimizer)
+        manager = tf.train.CheckpointManager(checkpoint=checkpoint, directory=out_dir, max_to_keep=keep_checkpoint_max)
+        if manager.latest_checkpoint:
+            logging.info('Checkpoint file found and restoring')
+            checkpoint.restore(manager.latest_checkpoint)
+
+        current_step = optimizer.iterations.numpy()
+        best_pmetric_val = None
+
+        # Training loop starts here
+        while current_step < num_train_steps:
+            # Training loss/metric are taking average over steps inside micro training loop. We reset the their values before each round.
+            train_loss_metric.reset_states()
+            for metric in model.metrics:
+                metric.reset_states()
+
+            train_flow_helper.run_callbacks_on_batch_begin(current_step, custom_callbacks)
+            steps = train_flow_helper.steps_to_run(current_step, steps_per_eval, steps_per_stats)
+
+            for _ in range(steps):
+                train_step(train_iterator)
+
+            train_loss = train_flow_helper.float_metric_value(train_loss_metric)
+            current_step += steps
+            train_flow_helper.run_callbacks_on_batch_end(current_step - 1, {'loss': train_loss}, custom_callbacks)
+            write_training_summary(train_summary_writer, train_loss, train_loss_metric, current_step)
+
+            logging.info('Train Step: %d/%d  / loss = %s' % (current_step, num_train_steps, train_loss))
+
+            # Saves model checkpoints and run validation steps
+            if current_step % steps_per_eval == 0:
+                # To avoid repeated model saving, we do not save after the last step of training.
+                if current_step < num_train_steps:
+                    train_flow_helper.save_checkpoint(strategy, current_step, manager)
+
+                logging.info('Running evaluation after step: %s.', current_step)
+                dev_iter = train_flow_helper.get_input_iterator(eval_input_fn, strategy, is_eval=True)
+                run_evaluation(current_step, dev_iter, eval_summary_writer, all_metrics, eval_step, 'Validation', num_eval_steps)
+
+                best_pmetric_val = export_best_model(strategy, pmetric, best_pmetric_val, model, out_dir)
+
+                # Re-initialize evaluation metric
+                for metric in all_metrics:
+                    metric.reset_states()
+
+        train_flow_helper.save_checkpoint(strategy, current_step, manager)
+
+        logging.info('Running final evaluation after training is complete.')
+        dev_iter = train_flow_helper.get_input_iterator(eval_input_fn, strategy, is_eval=True)
+        run_evaluation(current_step, dev_iter, eval_summary_writer, all_metrics, eval_step, 'Validation', num_eval_steps)
+
+        best_pmetric_val = export_best_model(strategy, pmetric, best_pmetric_val, model, out_dir)
+
+        logging.info(f'Running evaluation on test set with best model on dev set ({pmetric_name} = {best_pmetric_val})')
+        for metric in all_metrics:
+            metric.reset_states()
+        model.load_weights(train_flow_helper.get_export_model_variable_dir(out_dir))
+        test_iter = train_flow_helper.get_input_iterator(test_input_fn, strategy, is_eval=True)
+        run_evaluation(current_step, test_iter, eval_summary_writer, all_metrics, eval_step, 'Test', num_eval_steps)
+
+        if not detext.utils.distributed_utils.should_export_summary(strategy):
+            tf.io.gfile.rmtree(summary_dir)
+
+        return model
 
 
-def model_fn(features, labels, mode, params):
+def train(strategy, hparams):
+    """ Main function for train/evaluate DeText model
+
+    :param strategy Distributed training strategy
+    :param hparams HParams
     """
-    Defines the model_fn to feed in to estimator
-    :param features: dict containing the features in data
-    :param labels: dict containing labels in data
-    :param mode: running mode, in TRAIN/EVAL/PREDICT
-    :param params: hparams used
-    :return: tf.estimator.EstimatorSpec
-    """
-    query_field = features.get('query', None)
+    set_random_seed(hparams.random_seed)
 
-    uid = features.get('uid', None)
+    # Input functions
+    train_input_fn = detext.train.train_model_helper.get_input_fn_common(hparams.train_file, hparams.train_batch_size, tf.estimator.ModeKeys.TRAIN, hparams)
+    eval_input_fn = detext.train.train_model_helper.get_input_fn_common(hparams.dev_file, hparams.test_batch_size, tf.estimator.ModeKeys.EVAL, hparams)
+    test_input_fn = detext.train.train_model_helper.get_input_fn_common(hparams.test_file, hparams.test_batch_size, tf.estimator.ModeKeys.EVAL, hparams)
 
-    weight = features.get('weight', None)
-    wide_ftrs = features.get('wide_ftrs', None)
+    # Callbacks for logging performance.
+    custom_callbacks = [keras_utils.TimeHistory(batch_size=hparams.train_batch_size * strategy.num_replicas_in_sync,
+                                                log_steps=hparams.steps_per_stats,
+                                                logdir=hparams.out_dir)]
 
-    wide_ftrs_sp_idx = features.get('wide_ftrs_sp_idx', None)
-    wide_ftrs_sp_val = features.get('wide_ftrs_sp_val', None)
+    # Loss, metrics and optimizers
+    loss_fn = detext.train.train_model_helper.get_loss_fn(hparams)
+    metric_fn_lst = get_metric_fn_lst(hparams.all_metrics, hparams.task_type, hparams.num_classes)
+    optimizer_fn = detext.train.train_model_helper.get_optimizer_fn(hparams)
+    bert_optimizer_fn = detext.train.train_model_helper.get_bert_optimizer_fn(hparams)
+    model = run_customized_training_loop(model_fn=detext.train.train_model_helper.get_model_fn(hparams),
+                                         train_input_fn=train_input_fn,
+                                         eval_input_fn=eval_input_fn,
+                                         test_input_fn=test_input_fn,
+                                         strategy=strategy,
+                                         loss_fn=loss_fn,
+                                         num_train_steps=hparams.num_train_steps,
+                                         steps_per_stats=hparams.steps_per_stats,
+                                         steps_per_eval=hparams.steps_per_eval,
+                                         out_dir=hparams.out_dir,
+                                         custom_callbacks=custom_callbacks,
+                                         pre_allreduce_callbacks=[partial(clip_by_global_norm, clip_norm=hparams.max_gradient_norm)],
+                                         all_metric_fn_lst=metric_fn_lst,
+                                         explicit_allreduce=hparams.explicit_allreduce,
+                                         run_eagerly=hparams.run_eagerly,
+                                         pmetric_name=hparams.pmetric,
+                                         feature_type2name=hparams.feature_type2name,
+                                         keep_checkpoint_max=hparams.keep_checkpoint_max,
+                                         optimizer_fn=optimizer_fn,
+                                         bert_optimizer_fn=bert_optimizer_fn,
+                                         task_ids=hparams.task_ids,
+                                         task_weights=hparams.task_weights,
+                                         num_eval_steps=hparams.num_eval_steps)
 
-    doc_fields = [features[ftr_name] for ftr_name in features if ftr_name.startswith('doc_')]
-    if len(doc_fields) == 0:
-        doc_fields = None
-
-    usr_fields = [features[ftr_name] for ftr_name in features if ftr_name.startswith('usr_')]
-    if len(usr_fields) == 0:
-        usr_fields = None
-
-    doc_id_fields = [features[ftr_name] for ftr_name in features if ftr_name.startswith('docId_')]
-    if len(doc_id_fields) == 0:
-        doc_id_fields = None
-
-    usr_id_fields = [features[ftr_name] for ftr_name in features if ftr_name.startswith('usrId_')]
-    if len(usr_id_fields) == 0:
-        usr_id_fields = None
-
-    label_field = labels['label'] if mode != tf.estimator.ModeKeys.PREDICT else None
-    labels_passthrough = features['label']
-
-    group_size_field = features['group_size'] if mode != tf.estimator.ModeKeys.PREDICT else None
-
-    # For multitask training
-    task_id_field = features.get('task_id', None)  # shape=[batch_size,]
-
-    # Update the weight with each task's weight such that weight per document = weight * task_weight
-    if params.task_ids is not None:
-        task_ids = params.task_ids  # e.g. [0, 1, 2]
-        task_weights = params.task_weights  # e.g. [0.1, 0.3, 0.6]
-        # Expand task_id_field with shape [batch_size, num_tasks]
-        expanded_task_id_field = tf.transpose(tf.broadcast_to(task_id_field, [len(task_ids), tf.shape(task_id_field)[0]]))
-        task_mask = tf.cast(tf.equal(expanded_task_id_field, task_ids), dtype=tf.float32)
-        weight *= tf.reduce_sum(task_mask * task_weights, 1)  # shape=[batch_size,]
-
-    # build graph
-    model = DeepMatch(query=query_field,
-                      wide_ftrs=wide_ftrs,
-                      doc_fields=doc_fields,
-                      usr_fields=usr_fields,
-                      doc_id_fields=doc_id_fields,
-                      usr_id_fields=usr_id_fields,
-                      hparams=params,
-                      mode=mode,
-                      wide_ftrs_sp_idx=wide_ftrs_sp_idx,
-                      wide_ftrs_sp_val=wide_ftrs_sp_val,
-                      task_id_field=task_id_field)
-
-    if mode == tf.estimator.ModeKeys.TRAIN:
-        loss = compute_loss(params, model.scores, label_field, group_size_field, weight)
-        train_op, _, _ = optimization.create_optimizer(params, loss)
-        global_step = tf.train.get_global_step()
-        train_tensors_log = {'loss': loss, 'global_step': global_step}
-        logging_hook = tf.train.LoggingTensorHook(train_tensors_log, every_n_iter=10)
-        return tf.estimator.EstimatorSpec(mode=mode,
-                                          loss=loss,
-                                          train_op=train_op,
-                                          training_hooks=[logging_hook])
-
-    elif mode == tf.estimator.ModeKeys.EVAL:
-        loss = compute_loss(params, model.scores, label_field, group_size_field, weight)
-        eval_metric_ops = {}
-        for metric_name in params.all_metrics:
-            metric_op_name = 'metric/{}'.format(metric_name)
-            topk = int(metric_name.split('@')[1]) if '@' in metric_name else 10  # Default topk
-            if metric_name.startswith('ndcg'):
-                metric = metrics.compute_ndcg_tfr(model.scores, label_field, features, topk)
-            elif metric_name.startswith('mrr'):
-                metric = metrics.compute_mrr_tfr(model.scores, label_field, features)
-            elif metric_name.startswith('precision'):
-                metric = metrics.compute_precision_tfr(model.scores, label_field, features, topk)
-            elif metric_name.startswith('traditional_ndcg'):
-                metric = metrics.compute_ndcg(model.scores, label_field, group_size_field, topk)
-            elif metric_name.startswith('li_mrr'):
-                metric = metrics.compute_mrr(model.scores, labels['label'], features['group_size'], topk)
-            elif metric_name == 'auc':
-                metric = metrics.compute_auc(model.scores, label_field)
-            elif metric_name == 'accuracy':
-                metric = metrics.compute_accuracy(model.scores, label_field)
-            elif metric_name == 'confusion_matrix':
-                metric = metrics.compute_confusion_matrix(model.scores, label_field, params.num_classes)
-            else:
-                raise ValueError(f"Unsupported metrics: {metric_name}")
-            eval_metric_ops[metric_op_name] = metric
-        return tf.estimator.EstimatorSpec(mode,
-                                          loss=loss,
-                                          eval_metric_ops=eval_metric_ops)
-
-    elif mode == tf.estimator.ModeKeys.PREDICT:
-        # Prediction field for scoring models
-        predictions = {
-            'uid': uid,
-            'scores': model.original_scores,
-            'weight': weight,
-            'label': labels_passthrough
-        }
-        # multiclass classification: export the probabilities across classes by applying softmax
-        if params.num_classes > 1:
-            predictions['multiclass_probabilities'] = tf.nn.softmax(model.scores)
-
-        export_outputs = {
-            'prediction': tf.estimator.export.PredictOutput(predictions)
-        }
-        # Provide an estimator spec for `ModeKeys.PREDICT` mode.
-        return tf.estimator.EstimatorSpec(mode,
-                                          predictions=predictions,
-                                          export_outputs=export_outputs)
-    else:
-        raise ValueError("Only support mode as TRAIN/EVAL/PREDICT")
-
-
-def compute_loss(hparams, scores, labels, group_size, weight):
-    """ Computes ranking/classification loss with regularization """
-    if weight is None:
-        raise ValueError("weight should not be None")
-    return compute_rank_clf_loss(hparams, scores, labels, group_size, weight) + tf.reduce_mean(
-        weight) * compute_regularization_penalty(hparams)
-
-
-def compute_rank_clf_loss(hparams, scores, labels, group_size, weight):
-    """
-    Compute ranking/classification loss
-    Note that the tfr loss is slightly different than our implementation: the tfr loss is sum over all loss and
-    devided by number of queries; our implementation is sum over all loss and devided by the number of larger than
-    0 labels.
-    """
-    # Classification loss
-    if hparams.num_classes > 1:
-        labels = tf.cast(labels, tf.int32)
-        labels = tf.squeeze(labels, -1)  # Last dimension is max_group_size, which should be 1
-        return tf.losses.sparse_softmax_cross_entropy(logits=scores, labels=labels, weights=weight)
-
-    # Expand weight to [batch size, 1] so that in inhouse ranking loss it can be multiplied with loss which is
-    #   [batch_size, max_group_size]
-    expanded_weight = tf.expand_dims(weight, axis=-1)
-
-    # Ranking losses
-    # tf-ranking loss
-    if hparams.use_tfr_loss:
-        weight_name = "weight"
-        loss_fn = tfr.losses.make_loss_fn(hparams.tfr_loss_fn, lambda_weight=hparams.tfr_lambda_weights,
-                                          weights_feature_name=weight_name)
-        loss = loss_fn(labels, scores, {weight_name: expanded_weight})
-        return loss
-
-    # our own implementation
-    if hparams.ltr_loss_fn == 'pairwise':
-        lambdarank = LambdaRank()
-        pairwise_loss, pairwise_mask = lambdarank(scores, labels, group_size)
-        loss = tf.reduce_sum(tf.reduce_sum(pairwise_loss, axis=[1, 2]) * expanded_weight) / tf.reduce_sum(pairwise_mask)
-    elif hparams.ltr_loss_fn == 'softmax':
-        loss = compute_softmax_loss(scores, labels, group_size) * expanded_weight
-        is_positive_label = tf.cast(tf.greater(labels, 0), dtype=tf.float32)
-        loss = tf.div_no_nan(tf.reduce_sum(loss), tf.reduce_sum(is_positive_label))
-    elif hparams.ltr_loss_fn == 'pointwise':
-        loss = compute_sigmoid_cross_entropy_loss(scores, labels, group_size) * expanded_weight
-        loss = tf.reduce_mean(loss)
-    else:
-        raise ValueError('Currently only support pointwise/pairwise/softmax/softmax_cls.')
-    return loss
+    train_flow_helper.print_model_summary(model)

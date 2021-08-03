@@ -7,15 +7,16 @@ this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-requires = ['numpy<1.17',
-            'smart-arg==0.4',
-            'tensorflow==1.14.0',
-            'tensorflow_ranking==0.1.4']
+TF_VERSION_QUANTIFIER='>=2.4,<2.5'
+PACKAGES = ['smart-arg==0.1.1', 'bump2version==1.0.0', 'twine==3.2.0', f'tf-models-official{TF_VERSION_QUANTIFIER}', f'tensorflow{TF_VERSION_QUANTIFIER}', f'tensorflow-text{TF_VERSION_QUANTIFIER}', 'tensorflow_ranking', 'future<0.14']
+
 setuptools.setup(
     name='detext',
     long_description=long_description,
     long_description_content_type='text/markdown',
     classifiers=["Programming Language :: Python :: 3.7",
+		 "Topic :: Scientific/Engineering :: Artificial Intelligence",
+		 "Topic :: Software Development :: Libraries",
                  "Intended Audience :: Science/Research",
                  "Intended Audience :: Developers",
                  "License :: OSI Approved"],
@@ -25,7 +26,7 @@ setuptools.setup(
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,
-    install_requires=requires,
+    install_requires=PACKAGES,
     tests_require=[
         'pytest',
     ])

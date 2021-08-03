@@ -1,352 +1,292 @@
 import re
+
 import tensorflow as tf
-from os.path import join as path_join
-from detext.utils import executor_utils
+import tensorflow_addons.optimizers as tfa_optimizers
+from official.nlp.optimization import WarmUp
+from official.staging.training.grad_utils import _run_callbacks, _filter_and_allreduce_gradients
+
+from detext.layers.bert_layer import BERT_VAR_PREFIX
 
 
-def create_optimizer(hparams, loss):
+def create_optimizer(init_lr,
+                     num_train_steps,
+                     num_warmup_steps,
+                     optimizer,
+                     use_lr_schedule,
+                     use_bias_correction_for_adamw):
+    """Creates an optimizer with learning rate schedule.
+
+    Extended based on official.nlp.optimization.create_optimizer
+    :param init_lr Initial learning rate
+    :param num_train_steps Number of training steps
+    :param num_warmup_steps Number of warmup steps
+    :param optimizer Type of optimizer
+    :param use_lr_schedule Whether to use learning rate scheudling such as warm up and decay
+    :param use_bias_correction_for_adamw Whether to use bias correction in AdamWeightDecay optimzer
     """
-    Creates an optimizer training op.
-    If the parameter lr_bert is specified, then use another adam for this learning rate.
-    """
-    tvars = tf.trainable_variables()
-
-    if hparams.use_horovod:
-        import horovod.tensorflow as hvd
-
-    # Log trainable variables (with local mode, or chief for ps strategy or rank 0 for hvd training)
-    task_type = executor_utils.get_executor_task_type()
-    if (hparams.use_horovod is False and task_type in [executor_utils.CHIEF, executor_utils.LOCAL_MODE]) or \
-            (hparams.use_horovod is True and hvd.rank() == 0):
-        with tf.gfile.Open(path_join(hparams.out_dir, 'network_structure.txt'), 'w') as fout:
-            fout.write("# Trainable variables\n")
-            total_deep_params = 0
-            total_params = 0
-            for param in tvars:
-                psize = 1
-                for s in param.get_shape():
-                    psize *= s
-                total_params += psize
-                if param.name.startswith(hparams.ftr_ext):
-                    total_deep_params += psize
-                fout.write("  %s, %s, %s\n" % (param.name, str(param.get_shape()), param.op.device))
-            fout.write('\n')
-            fout.write('# Total trainable params: {}\n'.format(total_params))
-            fout.write('# Out of the total trainable params, the total {} parameters: {}\n'
-                       .format(hparams.ftr_ext, total_deep_params))
-
-    # Define optimizer parameters
-    init_lr = hparams.learning_rate
-    num_train_steps = hparams.num_train_steps
-    num_warmup_steps = hparams.num_warmup_steps
-    lr_bert = hparams.lr_bert
-
-    global_step = tf.train.get_or_create_global_step()
-
-    learning_rate = tf.constant(value=init_lr, shape=[], dtype=tf.float32)
-
-    if hparams.optimizer.startswith("bert_"):
-        # Using optimizer with bert's implementation
+    lr_schedule = init_lr
+    if use_lr_schedule:
         # Implements linear decay of the learning rate.
-        learning_rate = tf.train.polynomial_decay(
-            learning_rate,
-            global_step,
-            num_train_steps,
-            end_learning_rate=0.0,
+        lr_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+            initial_learning_rate=init_lr,
+            decay_steps=num_train_steps,
             power=1.0,
-            cycle=False)
+            end_learning_rate=0.0)
 
-        # Implements linear warmup. I.e., if global_step < num_warmup_steps, the
-        # learning rate will be `global_step/num_warmup_steps * init_lr`.
         if num_warmup_steps:
-            global_steps_int = tf.cast(global_step, tf.int32)
-            warmup_steps_int = tf.constant(num_warmup_steps, dtype=tf.int32)
+            lr_schedule = WarmUp(
+                initial_learning_rate=init_lr,
+                decay_schedule_fn=lr_schedule,
+                warmup_steps=num_warmup_steps)
 
-            global_steps_float = tf.cast(global_steps_int, tf.float32)
-            warmup_steps_float = tf.cast(warmup_steps_int, tf.float32)
+    optimizer_dct = {
+        'sgd': tf.keras.optimizers.SGD(learning_rate=lr_schedule),
+        'adam': tf.keras.optimizers.Adam(learning_rate=lr_schedule),
+        'adamw': AdamWeightDecay(learning_rate=lr_schedule,
+                                 weight_decay_rate=0.01,
+                                 beta_1=0.9,
+                                 beta_2=0.999,
+                                 epsilon=1e-6,
+                                 exclude_from_weight_decay=['LayerNorm', 'layer_norm', 'bias'],
+                                 use_bias_correction=use_bias_correction_for_adamw),
+        'lamb': tfa_optimizers.LAMB(learning_rate=lr_schedule,
+                                    weight_decay_rate=0.01,
+                                    beta_1=0.9,
+                                    beta_2=0.999,
+                                    epsilon=1e-6,
+                                    exclude_from_weight_decay=['LayerNorm', 'layer_norm', 'bias'])
+    }
 
-            warmup_percent_done = global_steps_float / warmup_steps_float
-            warmup_learning_rate = init_lr * warmup_percent_done
+    return optimizer_dct[optimizer]
 
-            is_warmup = tf.cast(global_steps_int < warmup_steps_int, tf.float32)
-            learning_rate = ((1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
 
-        name_2_optimizer = {
-            'bert_adam': AdamWeightDecayOptimizer,
-            'bert_lamb': LAMBOptimizer
-        }
-        OptimizerFunc = name_2_optimizer[hparams.optimizer]
+def process_grads_and_vars_without_explicit_allreduce(tape, optimizer, loss, trainable_variables, post_allreduce_callbacks):
+    """Performs gradient allreduce relying on implicit allreduce in optimizer.apply_gradients()
 
-        # It is recommended that you use this optimizer for fine tuning, since this
-        # is how the model was trained (note that the Adam/Lamb m/v variables are NOT
-        # loaded from init_checkpoint.)
-        optimizer = OptimizerFunc(
-            learning_rate=learning_rate,
-            weight_decay_rate=0.01,
-            beta_1=0.9,
-            beta_2=0.999,
-            epsilon=1e-6,
-            exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
+    Reference: run_customized_training_loop() in official/nlp/bert/model_training_utils.py
 
-        if hparams.use_horovod:
-            # Horovod's distributed optimizer handles allreduce calls, synchronous only
-            optimizer = hvd.DistributedOptimizer(optimizer, sparse_as_dense=True)
-            grads_and_vars = optimizer.compute_gradients(loss, tvars)
-            grads = [grad for grad, var in grads_and_vars]
-            tvars = [var for grad, var in grads_and_vars]
-        else:
-            grads = tf.gradients(loss, tvars)
-
-        grads, grad_norm = tf.clip_by_global_norm(grads, clip_norm=1.0)
-
-        if lr_bert is None:
-            # If not a separate learning rate for bert (lr_bert) is specified,
-            # all components use the same learning rate
-            train_op = optimizer.apply_gradients(
-                zip(grads, tvars), global_step=global_step)
-
-            # Normally the global step update is done inside of `apply_gradients`.
-            # However, `AdamWeightDecayOptimizer` doesn't do this. But if you use
-            # a different optimizer, you should probably take this line out.
-            new_global_step = global_step + 1
-            train_op = tf.group(train_op, [global_step.assign(new_global_step)])
-        else:
-            # the BERT components will use another learning rate
-            optimizer_bert = OptimizerFunc(
-                learning_rate=learning_rate * lr_bert / init_lr,
-                weight_decay_rate=0.01,
-                beta_1=0.9,
-                beta_2=0.999,
-                epsilon=1e-6,
-                exclude_from_weight_decay=["LayerNorm", "layer_norm", "bias"])
-            if hparams.use_horovod:
-                # Treat the bert optimizer the same as the original optimizer: wrapped with horovod
-                optimizer_bert = hvd.DistributedOptimizer(optimizer_bert, sparse_as_dense=True)
-
-            bert_grad, bert_tvars = [], []
-            other_grad, other_tvars = [], []
-            for grad, tvar in zip(grads, tvars):
-                if tvar is not None and grad is not None:
-                    if tvar.name.startswith('bert'):
-                        bert_grad.append(grad)
-                        bert_tvars.append(tvar)
-                        print('****bert param:', tvar.name)
-                    else:
-                        other_grad.append(grad)
-                        other_tvars.append(tvar)
-                        print('****other param:', tvar.name)
-            print('--------------\n', '# of bert', len(bert_grad), '# of other', len(other_grad), '\n--------------')
-            bert_train_op = optimizer_bert.apply_gradients(
-                zip(bert_grad, bert_tvars), global_step=global_step)
-            other_train_op = optimizer.apply_gradients(
-                zip(other_grad, other_tvars), global_step=global_step)
-
-            new_global_step = global_step + 1
-            train_op = tf.group(bert_train_op, other_train_op, [global_step.assign(new_global_step)])
-
-        return train_op, grad_norm, learning_rate
-
-    elif hparams.optimizer == "sgd":
-        opt = tf.train.GradientDescentOptimizer(learning_rate)
-    elif hparams.optimizer == "adam":
-        opt = tf.train.AdamOptimizer(learning_rate)
+    :param tape: An instance of `tf.GradientTape`.
+    :param optimizer: An instance of `tf.keras.optimizers.Optimizer`.
+    :param loss: the loss tensor.
+    :param trainable_variables: A list of model Variables.
+    :param post_allreduce_callbacks: A list of callback functions that takes gradients and model variables pairs as input, manipulate them, and
+      returns a new gradients and model variables paris. The callback functions will be invoked in the list order and right before gradients
+      are applied to variables for updates. Default is no callbacks.
+    """
+    if isinstance(optimizer, tf.keras.mixed_precision.experimental.LossScaleOptimizer):
+        # FP16 GPU code path
+        with tape:
+            scaled_loss = optimizer.get_scaled_loss(loss)
+        scaled_grads = tape.gradient(scaled_loss, trainable_variables)
+        grads = optimizer.get_unscaled_gradients(scaled_grads)
     else:
-        raise ValueError("Only support sgd/adam/bert_adam as optimizer option")
+        # FP32 GPU code path
+        grads = tape.gradient(loss, trainable_variables)
 
-    # Gradients
-    gradients = tf.gradients(loss, tvars, colocate_gradients_with_ops=True)
-    clipped_gradients, grad_norm = tf.clip_by_global_norm(gradients, hparams.max_gradient_norm)
-    train_op = opt.apply_gradients(zip(clipped_gradients, tvars), global_step=global_step)
+    trainable_vars = trainable_variables
+    grads_and_vars = zip(grads, trainable_vars)
+    if post_allreduce_callbacks:
+        grads_and_vars = _run_callbacks(post_allreduce_callbacks, zip(grads, trainable_vars))
+    return grads_and_vars
 
-    return train_op, grad_norm, learning_rate
+
+def process_grads_and_vars_using_explicit_allreduce(tape,
+                                                    optimizer,
+                                                    loss, trainable_variables,
+                                                    pre_allreduce_callbacks=None,
+                                                    post_allreduce_callbacks=None):
+    """Explicitly performs gradient allreduce, instead of relying on implicit allreduce in optimizer.apply_gradients()
+
+    If training using FP16 mixed precision, explicit allreduce will aggregate gradients in FP16 format.
+    For TPU and GPU training using FP32, explicit allreduce will aggregate gradients in FP32 format.
+
+    Reference: minimize_using_explicit_allreduce() in official/staging/training/grad_utils.py
+
+    :param tape: An instance of `tf.GradientTape`.
+    :param optimizer: An instance of `tf.keras.optimizers.Optimizer`.
+    :param loss: the loss tensor.
+    :param trainable_variables: A list of model Variables.
+    :param pre_allreduce_callbacks: A list of callback functions that takes gradients and model variables pairs as input, manipulate them, and returns a new
+      gradients and model variables pairs. The callback functions will be invoked in the list order and before gradients are allreduced.
+      With mixed precision training, the pre_allreduce_allbacks will be applied on scaled_gradients. Default is no callbacks.
+    :param post_allreduce_callbacks: A list of callback functions that takes gradients and model variables pairs as input, manipulate them, and
+      returns a new gradients and model variables paris. The callback functions will be invoked in the list order and right before gradients
+      are applied to variables for updates. Default is no callbacks.
+    """
+    if isinstance(optimizer, tf.keras.mixed_precision.experimental.LossScaleOptimizer):
+        # FP16 GPU code path
+        with tape:
+            scaled_loss = optimizer.get_scaled_loss(loss)
+
+        scaled_grads = tape.gradient(scaled_loss, trainable_variables)
+        grads_and_vars = zip(scaled_grads, trainable_variables)
+        if pre_allreduce_callbacks:
+            grads_and_vars = _run_callbacks(pre_allreduce_callbacks, grads_and_vars)
+        (allreduced_scaled_grads, filtered_trainable_variables) = _filter_and_allreduce_gradients(grads_and_vars, allreduce_precision="float16")
+        allreduced_unscaled_grads = optimizer.get_unscaled_gradients(allreduced_scaled_grads)
+        grads_and_vars = zip(allreduced_unscaled_grads, filtered_trainable_variables)
+    else:
+        # TPU or FP32 GPU code path
+        grads = tape.gradient(loss, trainable_variables)
+        grads_and_vars = zip(grads, trainable_variables)
+        if pre_allreduce_callbacks:
+            grads_and_vars = _run_callbacks(pre_allreduce_callbacks, grads_and_vars)
+        (allreduced_grads, filtered_trainable_variables) = _filter_and_allreduce_gradients(grads_and_vars, allreduce_precision="float32")
+        grads_and_vars = zip(allreduced_grads, filtered_trainable_variables)
+    if post_allreduce_callbacks:
+        grads_and_vars = _run_callbacks(post_allreduce_callbacks, grads_and_vars)
+
+    return grads_and_vars
 
 
-class AdamWeightDecayOptimizer(tf.train.Optimizer):
-    """A basic Adam optimizer that includes "correct" L2 weight decay."""
+def split_bert_grads_and_vars(grads_and_vars):
+    """ Splits gradient and variables into bert related and non related groups"""
+    non_bert_grads_and_vars = list()
+    bert_grads_and_vars = list()
+    for grad, var in grads_and_vars:
+        if BERT_VAR_PREFIX in var.name:
+            bert_grads_and_vars.append((grad, var))
+        else:
+            non_bert_grads_and_vars.append((grad, var))
+    return bert_grads_and_vars, non_bert_grads_and_vars
+
+
+def clip_by_global_norm(grads_and_vars, clip_norm):
+    """Returns the gradient clipping function that clips gradients with given clipnorm"""
+    grads, variables = zip(*grads_and_vars)
+    (clipped_grads, _) = tf.clip_by_global_norm(grads, clip_norm=clip_norm)
+    return zip(clipped_grads, variables)
+
+
+class AdamWeightDecay(tf.keras.optimizers.Adam):
+    """Adam enables L2 weight decay and clip_by_global_norm on gradients.
+
+    Just adding the square of the weights to the loss function is *not* the
+    correct way of using L2 regularization/weight decay with Adam, since that will
+    interact with the m and v parameters in strange ways.
+
+    Instead we want ot decay the weights in a manner that doesn't interact with
+    the m/v parameters. This is equivalent to adding the square of the weights to
+    the loss with plain (non-momentum) SGD.
+
+    This class is extended based on the implementation of tf-models-offical. This class adds a use_bias_correction param so that users
+        can disable the bias to speed up training. It's worth noting that the TF1 version of AdamWeightDecay also does not have bias
+    """
 
     def __init__(self,
-                 learning_rate,
+                 learning_rate=0.001,
+                 beta_1=0.9,
+                 beta_2=0.999,
+                 epsilon=1e-7,
+                 amsgrad=False,
                  weight_decay_rate=0.0,
-                 beta_1=0.9,
-                 beta_2=0.999,
-                 epsilon=1e-6,
+                 include_in_weight_decay=None,
                  exclude_from_weight_decay=None,
-                 name="AdamWeightDecayOptimizer"):
-        """Constructs a AdamWeightDecayOptimizer."""
-        super(AdamWeightDecayOptimizer, self).__init__(False, name)
-
-        self.learning_rate = learning_rate
+                 name='AdamWeightDecay',
+                 use_bias_correction=False,
+                 **kwargs):
+        super(AdamWeightDecay, self).__init__(learning_rate, beta_1, beta_2,
+                                              epsilon, amsgrad, name, **kwargs)
         self.weight_decay_rate = weight_decay_rate
-        self.beta_1 = beta_1
-        self.beta_2 = beta_2
-        self.epsilon = epsilon
-        self.exclude_from_weight_decay = exclude_from_weight_decay
+        self._include_in_weight_decay = include_in_weight_decay
+        self._exclude_from_weight_decay = exclude_from_weight_decay
+        self.use_bias_correction = use_bias_correction
 
-    def apply_gradients(self, grads_and_vars, global_step=None, name=None):
-        """See base class."""
-        assignments = []
-        for (grad, param) in grads_and_vars:
-            if grad is None or param is None:
-                continue
+    @classmethod
+    def from_config(cls, config):
+        """Creates an optimizer from its config with WarmUp custom object."""
+        custom_objects = {'WarmUp': WarmUp}
+        return super(AdamWeightDecay, cls).from_config(
+            config, custom_objects=custom_objects)
 
-            param_name = self._get_variable_name(param.name)
+    def _prepare_local(self, var_device, var_dtype, apply_state):
+        super(AdamWeightDecay, self)._prepare_local(var_device, var_dtype,
+                                                    apply_state)
+        apply_state[(var_device, var_dtype)]['weight_decay_rate'] = tf.constant(
+            self.weight_decay_rate, name='adam_weight_decay_rate')
 
-            m = tf.get_variable(
-                name=param_name + "/adam_m",
-                shape=param.shape.as_list(),
-                dtype=tf.float32,
-                trainable=False,
-                initializer=tf.zeros_initializer())
-            v = tf.get_variable(
-                name=param_name + "/adam_v",
-                shape=param.shape.as_list(),
-                dtype=tf.float32,
-                trainable=False,
-                initializer=tf.zeros_initializer())
+    def _decay_weights_op(self, var, learning_rate, apply_state):
+        do_decay = self._do_use_weight_decay(var.name)
+        if do_decay:
+            return var.assign_sub(
+                learning_rate * var *
+                apply_state[(var.device, var.dtype.base_dtype)]['weight_decay_rate'],
+                use_locking=self._use_locking)
+        return tf.no_op()
 
-            # Standard Adam update.
-            next_m = (tf.multiply(self.beta_1, m) + tf.multiply(1.0 - self.beta_1, grad))
-            next_v = (tf.multiply(self.beta_2, v) + tf.multiply(1.0 - self.beta_2, tf.square(grad)))
+    def apply_gradients(self,
+                        grads_and_vars,
+                        name=None,
+                        experimental_aggregate_gradients=True):
+        grads, tvars = list(zip(*grads_and_vars))
+        if experimental_aggregate_gradients:
+            # when experimental_aggregate_gradients = False, apply_gradients() no
+            # longer implicitly allreduce gradients, users manually allreduce gradient
+            # and passed the allreduced grads_and_vars. For now, the
+            # clip_by_global_norm will be moved to before the explicit allreduce to
+            # keep the math the same as TF 1 and pre TF 2.2 implementation.
+            (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+        return super(AdamWeightDecay, self).apply_gradients(
+            zip(grads, tvars),
+            name=name,
+            experimental_aggregate_gradients=experimental_aggregate_gradients)
 
-            update = next_m / (tf.sqrt(next_v) + self.epsilon)
+    def _get_lr(self, var_device, var_dtype, apply_state):
+        """Retrieves the learning rate with the given state."""
+        if apply_state is None:
+            return self._decayed_lr_t[var_dtype], {}
 
-            # Just adding the square of the weights to the loss function is *not*
-            # the correct way of using L2 regularization/weight decay with Adam,
-            # since that will interact with the m and v parameters in strange ways.
+        apply_state = apply_state or {}
+        coefficients = apply_state.get((var_device, var_dtype))
+        if coefficients is None:
+            coefficients = self._fallback_apply_state(var_device, var_dtype)
+            apply_state[(var_device, var_dtype)] = coefficients
+        if not self.use_bias_correction:
+            # Explicitly setting the beta powers to be 0 so that we do not do bias correction for the estimations
+            # Below are the standard update for Adam
+            # $$lr_t := \text{learning\_rate} * \sqrt{1 - beta_2^t} / (1 - beta_1^t)$$
+            # $$m_t := beta_1 * m_{t-1} + (1 - beta_1) * g$$
+            # $$v_t := beta_2 * v_{t-1} + (1 - beta_2) * g * g$$
+            # $$variable := variable - lr_t * m_t / (\sqrt{v_t} + \epsilon)$$
             #
-            # Instead we want ot decay the weights in a manner that doesn't interact
-            # with the m/v parameters. This is equivalent to adding the square
-            # of the weights to the loss with plain (non-momentum) SGD.
-            if self._do_use_weight_decay(param_name):
-                update += self.weight_decay_rate * param
+            # By setting beta_1_power and beta_2_power to 0, the update is equivalent to the TF1 implementation of Adam
+            coefficients['beta_1_power'] = .0
+            coefficients['beta_2_power'] = .0
+        return coefficients['lr_t'], dict(apply_state=apply_state)
 
-            update_with_lr = self.learning_rate * update
+    def _resource_apply_dense(self, grad, var, apply_state=None):
+        lr_t, kwargs = self._get_lr(var.device, var.dtype.base_dtype, apply_state)
+        decay = self._decay_weights_op(var, lr_t, apply_state)
+        with tf.control_dependencies([decay]):
+            return super(AdamWeightDecay,
+                         self)._resource_apply_dense(grad, var, **kwargs)
 
-            next_param = param - update_with_lr
+    def _resource_apply_sparse(self, grad, var, indices, apply_state=None):
+        lr_t, kwargs = self._get_lr(var.device, var.dtype.base_dtype, apply_state)
+        decay = self._decay_weights_op(var, lr_t, apply_state)
+        with tf.control_dependencies([decay]):
+            return super(AdamWeightDecay,
+                         self)._resource_apply_sparse(grad, var, indices, **kwargs)
 
-            assignments.extend(
-                [param.assign(next_param),
-                 m.assign(next_m),
-                 v.assign(next_v)])
-        return tf.group(*assignments, name=name)
+    def get_config(self):
+        config = super(AdamWeightDecay, self).get_config()
+        config.update({
+            'weight_decay_rate': self.weight_decay_rate,
+        })
+        return config
 
     def _do_use_weight_decay(self, param_name):
         """Whether to use L2 weight decay for `param_name`."""
-        if not self.weight_decay_rate:
+        if self.weight_decay_rate == 0:
             return False
-        if self.exclude_from_weight_decay:
-            for r in self.exclude_from_weight_decay:
+
+        if self._include_in_weight_decay:
+            for r in self._include_in_weight_decay:
+                if re.search(r, param_name) is not None:
+                    return True
+
+        if self._exclude_from_weight_decay:
+            for r in self._exclude_from_weight_decay:
                 if re.search(r, param_name) is not None:
                     return False
         return True
-
-    def _get_variable_name(self, param_name):
-        """Get the variable name from the tensor name."""
-        m = re.match("^(.*):\\d+$", param_name)
-        if m is not None:
-            param_name = m.group(1)
-        return param_name
-
-
-class LAMBOptimizer(tf.train.Optimizer):
-    """
-    Optimizer that implements the Layer-wise Adaptive Moments (LAMB).
-    See paper [Large Batch Optimization for Deep Learning: Training BERT
-        in 76 minutes](https://arxiv.org/abs/1904.00962).
-    Official implementation from tensorflow addon tensorflow_addons/optimizers/lamb.py
-
-    Note that we does not apply adam bias correction for the moments estimates to keep it similar to the original AdamW
-    optimizer in BERT pretraining (which is the AdamWeightDecayOptimizer here). The only difference for the
-    LAMBOptimizer compared to AdamWeightDecayOptimizer implementation is the added layer adaptation.
-    """
-
-    def __init__(self,
-                 learning_rate,
-                 weight_decay_rate=0.01,
-                 beta_1=0.9,
-                 beta_2=0.999,
-                 epsilon=1e-6,
-                 exclude_from_weight_decay=None,
-                 name="LAMBOptimizer"):
-        """Constructs a LAMBOptimizer."""
-        super(LAMBOptimizer, self).__init__(False, name)
-
-        self.learning_rate = learning_rate
-        self.weight_decay_rate = weight_decay_rate
-        self.beta_1 = beta_1
-        self.beta_2 = beta_2
-        self.epsilon = epsilon
-        self.exclude_from_weight_decay = exclude_from_weight_decay
-
-    def apply_gradients(self, grads_and_vars, global_step=None, name=None):
-        """See base class."""
-        assignments = []
-        for (grad, param) in grads_and_vars:
-            if grad is None or param is None:
-                continue
-
-            param_name = self._get_variable_name(param.name)
-
-            m = tf.get_variable(
-                name=param_name + "/lamb_m",
-                shape=param.shape.as_list(),
-                dtype=tf.float32,
-                trainable=False,
-                initializer=tf.zeros_initializer())
-            v = tf.get_variable(
-                name=param_name + "/lamb_v",
-                shape=param.shape.as_list(),
-                dtype=tf.float32,
-                trainable=False,
-                initializer=tf.zeros_initializer())
-
-            # Standard Adam update.
-            next_m = (tf.multiply(self.beta_1, m) + tf.multiply(1.0 - self.beta_1, grad))
-            next_v = (tf.multiply(self.beta_2, v) + tf.multiply(1.0 - self.beta_2, tf.square(grad)))
-
-            update = next_m / (tf.sqrt(next_v) + self.epsilon)
-
-            # Just adding the square of the weights to the loss function is *not*
-            # the correct way of using L2 regularization/weight decay with Adam,
-            # since that will interact with the m and v parameters in strange ways.
-            #
-            # Instead we want ot decay the weights in a manner that doesn't interact
-            # with the m/v parameters. This is equivalent to adding the square
-            # of the weights to the loss with plain (non-momentum) SGD.
-            if self._do_use_weight_decay(param_name):
-                update += self.weight_decay_rate * param
-
-            # lamb layer adaptation
-            w_norm = tf.norm(param, ord=2)
-            g_norm = tf.norm(update, ord=2)
-
-            ratio = tf.where(
-                tf.greater(w_norm, 0),
-                tf.where(tf.greater(g_norm, 0), (w_norm / g_norm), 1.0), 1.0)
-
-            update_with_lr = self.learning_rate * ratio * update
-
-            next_param = param - update_with_lr
-
-            assignments.extend(
-                [param.assign(next_param),
-                 m.assign(next_m),
-                 v.assign(next_v)])
-        return tf.group(*assignments, name=name)
-
-    def _do_use_weight_decay(self, param_name):
-        """Whether to use L2 weight decay for `param_name`."""
-        if not self.weight_decay_rate:
-            return False
-        if self.exclude_from_weight_decay:
-            for r in self.exclude_from_weight_decay:
-                if re.search(r, param_name) is not None:
-                    return False
-        return True
-
-    def _get_variable_name(self, param_name):
-        """Get the variable name from the tensor name."""
-        m = re.match("^(.*):\\d+$", param_name)
-        if m is not None:
-            param_name = m.group(1)
-        return param_name

@@ -1,191 +1,139 @@
+from typing import List
+
 import tensorflow as tf
 import tensorflow_ranking as tfr
 
+from detext.utils.parsing_utils import TaskType
 
-def compute_ndcg_tfr(scores, labels, features, topk):
-    """Computes NDCG using tf ranking"""
-    metric_fn = tfr.metrics.make_ranking_metric_fn(tfr.metrics.RankingMetricKey.NDCG, topn=topk)
-    return metric_fn(labels, scores, features)
+_TOPK_DELIMITER = '@'
+_DEFAULT_TOPK = 10
+_DEFAULT_AUC_NUM_THRESHOLD = 2000
 
 
-def compute_mrr_tfr(scores, labels, features):
-    """Computes MRR using tf ranking
+class BinaryAccuracyMetric(tf.keras.metrics.BinaryAccuracy):
+    """ Metric for computing BinaryAccuracy given DeText format input """
 
-    NOTE: There is a bug in tf-rank that's causing topk to have no effect, so this function is computing MRR for
-        whole list WHATEVER topk is.
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores. Shape=[batch_size]
+        :param labels: Tensor Labels. Shape=[batch_size]
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        scores = tf.nn.sigmoid(scores)
+        return super().update_state(labels, scores, sample_weight)
+
+
+class AccuracyMetric(tf.keras.metrics.SparseCategoricalAccuracy):
+    """ Metric for computing Accuracy given DeText format input """
+
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores. Shape=[batch_size, num_classes]
+        :param labels: Tensor Labels. Shape=[batch_size]
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        labels = tf.expand_dims(labels, axis=1)
+        return super(AccuracyMetric, self).update_state(labels, scores, sample_weight)
+
+
+class AUCMetric(tf.keras.metrics.AUC):
+    """ Metric for computing AUC given DeText format input """
+
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores. Shape=[batch_size, max_group_size(1)] for ranking. For classification, shape=[batch_size]
+        :param labels: Tensor Labels. Shape=[batch_size, max_group_size(1)] for ranking. For binary classification, shape=[batch_size]
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        labels = tf.reshape(labels, shape=[tf.shape(input=labels)[0]])
+        scores = tf.reshape(scores, shape=[tf.shape(input=scores)[0]])
+        prob = tf.sigmoid(scores)
+        return super(AUCMetric, self).update_state(labels, prob, sample_weight)
+
+
+class ConfusionMatrixMetric(tf.keras.metrics.Metric):
     """
-    metric_fn = tfr.metrics.make_ranking_metric_fn(tfr.metrics.RankingMetricKey.MRR)
-    return metric_fn(labels, scores, features)
-
-
-def compute_precision_tfr(scores, labels, features, topk):
-    """Computes precision using tf ranking"""
-    metric_fn = tfr.metrics.make_ranking_metric_fn(tfr.metrics.RankingMetricKey.PRECISION, topn=topk)
-    return metric_fn(labels, scores, features)
-
-
-def compute_dcg(scores, labels, group_size, topk):
+    Metric for computing confusion matrix
+    Credit to https://towardsdatascience.com/custom-metrics-in-keras-and-how-simple-they-are-to-use-in-tensorflow2-2-6d079c2ca279
     """
-    Compute the dcg score.
+
+    def __init__(self, num_classes, **kwargs):
+        super(ConfusionMatrixMetric, self).__init__(**kwargs)  # handles base args (e.g., dtype)
+        self.num_classes = num_classes
+        self.total_cm = self.add_weight("total", shape=(num_classes, num_classes), initializer='zeros')
+
+    def reset_states(self):
+        for s in self.variables:
+            s.assign(tf.zeros(shape=s.shape))
+
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores. Shape=[batch_size, num_classes]
+        :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
+            max_group_size should be 1
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        scores = tf.argmax(scores, 1)
+        cm = tf.math.confusion_matrix(labels, scores, dtype=tf.float32, num_classes=self.num_classes)
+        self.total_cm.assign_add(cm)
+        return self.total_cm
+
+    def result(self):
+        return self.total_cm
+
+
+def get_metric_fn(metric_name, task_type, num_classes):
+    """ Returns the corresponding metric_fn according to metric name"""
+
+    topk = int(metric_name.split(_TOPK_DELIMITER)[1]) if _TOPK_DELIMITER in metric_name else _DEFAULT_TOPK
+
+    ranking_metrics = {'ndcg': lambda: tfr.keras.metrics.NDCGMetric(topn=topk, name=metric_name),
+                       'mrr': lambda: tfr.keras.metrics.MRRMetric(topn=topk, name=metric_name),
+                       'precision': lambda: tfr.keras.metrics.PrecisionMetric(topn=topk, name=metric_name),
+                       'auc': lambda: AUCMetric(num_thresholds=_DEFAULT_AUC_NUM_THRESHOLD, name=metric_name)}
+
+    classification_metrics = {
+        'accuracy': lambda: AccuracyMetric(name=metric_name) if task_type == TaskType.CLASSIFICATION else BinaryAccuracyMetric(name=metric_name),
+        'confusion_matrix': lambda: ConfusionMatrixMetric(num_classes=num_classes, name=metric_name),
+        'auc': lambda: AUCMetric(num_thresholds=_DEFAULT_AUC_NUM_THRESHOLD, name=metric_name)
+    }
+
+    # Add ranking metric function
+    if task_type == TaskType.RANKING:
+        for prefix, metric_fn in ranking_metrics.items():
+            if metric_name.startswith(prefix):
+                if prefix == 'auc':
+                    assert metric_name == 'auc', 'AUC metric requires exact match'
+                    return metric_fn
+
+                return metric_fn
+        raise ValueError(f'Unsupported metric name: {metric_name}')
+
+    # Metric not found in ranking metric. Switch to classification metric matching
+    if task_type in [TaskType.CLASSIFICATION, TaskType.BINARY_CLASSIFICATION]:
+        assert num_classes is not None and num_classes > 0, f'num_classes has to be positive integer. Current num_classes: {num_classes}'
+        for clf_metric_name, metric_fn in classification_metrics.items():
+            if metric_name == clf_metric_name:
+                return metric_fn
+        raise ValueError(f'Unsupported metric name: {metric_name}')
+
+    raise ValueError(f'Unsupported task type: {task_type}')
+
+
+def get_metric_fn_lst(all_metrics: List[str], task_type, num_classes: int):
+    """ Returns a list of metric_fn from the given metrics
+
+    :param all_metrics A list of metrics supported by DeText
+    :param task_type Type of task. E.g., ranking/classification/binary_classification
+    :param num_classes Number of classes in the classification task
     """
-    max_group_size = tf.reduce_max(group_size)
-    batch_size = tf.shape(scores)[0]
-    topk = tf.minimum(max_group_size, topk)
-    # The padded docs should have lowest scores
-    mask = tf.sequence_mask(group_size, maxlen=tf.shape(scores)[1], dtype=tf.float32)
-    scores2 = (scores - tf.reduce_min(scores)) * mask - (1 - mask)
+    metric_fn_lst = []
 
-    def get_index(cols):
-        rows = tf.reshape(tf.range(batch_size * topk) // topk, [batch_size, topk])
-        index = tf.stack([rows, cols], axis=2)
-        return index
+    for metric_name in all_metrics:
+        metric_fn_lst.append(get_metric_fn(metric_name, task_type, num_classes))
 
-    # dcg
-    _, cols = tf.nn.top_k(scores2, k=topk)
-    actual_index = get_index(cols)
-    actual_score = tf.gather_nd(labels, actual_index)
-    # for one query, it is possible that topk is larger than group_size.  The actual_mask makes sure that the padded
-    # document get a score of 0 in actual_score.
-    actual_mask = tf.gather_nd(mask, actual_index)
-    dcg = actual_score * actual_mask / tf.log(tf.cast(tf.range(2, topk + 2), dtype=tf.float32)) * tf.log(2.0)
-    dcg = tf.reduce_sum(dcg, axis=-1)
-    return dcg
-
-
-def compute_mrr(scores, labels, group_size, topk):
-    """
-    Computes MRR score
-
-    :param scores: Tensor Predicted scores. Shape=[batch_size, max_group_size]
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-    :param group_size: Tensor Number of documents in each sample. Shape=[batch_size]
-    :param topk: int Number of samples to select in MRR computation
-    :return: Metric of average MRR
-    """
-    max_group_size = tf.reduce_max(group_size)
-    batch_size = tf.shape(scores)[0]
-    topk = tf.minimum(max_group_size, topk)
-    # The padded docs should have lowest scores
-    mask = tf.sequence_mask(group_size, maxlen=tf.shape(scores)[1], dtype=tf.float32)
-    scores2 = (scores - tf.reduce_min(scores)) * mask - (1 - mask)
-
-    def get_index(cols):
-        rows = tf.reshape(tf.range(batch_size * topk) // topk, [batch_size, topk])
-        index = tf.stack([rows, cols], axis=2)
-        return index
-
-    _, cols = tf.nn.top_k(scores2, k=topk)
-    actual_index = get_index(cols)
-    actual_score = tf.gather_nd(labels, actual_index)
-    # for one query, it is possible that topk is larger than group_size.  The actual_mask makes sure that the padded
-    # document get a score of 0 in actual_score.
-    actual_mask = tf.gather_nd(mask, actual_index)
-    rr = actual_score * actual_mask / tf.cast(tf.range(1, topk + 1), dtype=tf.float32)
-    rr = tf.reduce_max(rr, axis=-1)
-    return tf.metrics.mean(rr)
-
-
-def compute_ndcg(scores, labels, group_size, topk):
-    """
-    Computes ndcg score. Caution: it's the traditional formula instead of the one with numerator as power(2, relevance)
-
-    :param scores: Tensor Predicted scores. Shape=[batch_size, max_group_size]
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-    :param group_size: Tensor Number of documents in each sample. Shape=[batch_size]
-    :param topk: int Number of samples to select in ndcg computation
-    :return: Metric of average ndcg
-    """
-    idcg = compute_dcg(labels, labels, group_size, topk=topk)
-    dcg = compute_dcg(scores, labels, group_size, topk=topk)
-
-    ndcg = tf.div_no_nan(dcg, idcg)
-    return tf.metrics.mean(ndcg)
-
-
-def compute_preat1(scores, labels):
-    """
-    Compute precision@1, i.e., whether the top1 result has the highest label.
-    It should be only applied to one-hot labels.
-    :param scores: Tensor Predicted scores. Shape=[batch_size, max_group_size]
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-    :return: Metric of average precision@1
-    """
-    # prediction
-    predict = tf.argmax(scores, axis=-1, output_type=tf.int32)
-    pred_onehot = tf.one_hot(predict, tf.shape(scores)[-1])
-    # gold standard
-    max_value = tf.tile(tf.reduce_max(labels, axis=-1, keepdims=True), [1, tf.shape(labels)[-1]])
-    is_max_value = tf.cast(tf.equal(labels, max_value), dtype=tf.float32)
-    # compute preat1
-    preat1 = tf.reduce_sum(pred_onehot * is_max_value, axis=-1)
-    return tf.metrics.mean(preat1)
-
-
-def compute_rank(scores, group_size):
-    """
-    compute each element's rank
-    """
-    num_cols_scores = tf.shape(scores)[1]
-    # Make sure the padded docs have lowest scores
-    mask = tf.sequence_mask(group_size, maxlen=num_cols_scores, dtype=tf.float32)
-    scores2 = (scores - tf.reduce_min(scores)) * mask - (1 - mask)
-    # construct rank matrix using tf.nn.top_k
-    _, col_idx = tf.nn.top_k(scores2, k=num_cols_scores)
-    col_idx = tf.reshape(col_idx, shape=[-1])
-    row_idx = tf.range(tf.size(scores)) // num_cols_scores
-    idx = tf.concat([tf.expand_dims(row_idx, -1), tf.expand_dims(col_idx, -1)], axis=1)
-    val = tf.cast(tf.range(tf.size(scores)) % num_cols_scores + 1, dtype=tf.float32)
-    rank_mat = tf.scatter_nd(idx, val, shape=tf.shape(scores))
-    return rank_mat
-
-
-def compute_auc(scores, labels):
-    """Computes AUC score given scores and labels.
-
-    :param scores: Tensor Predicted scores. Shape=[batch_size, max_group_size].
-        max_group_size should be 1
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-        max_group_size should be 1
-    """
-    labels = tf.reshape(labels, shape=[tf.shape(labels)[0]])
-    scores = tf.reshape(scores, shape=[tf.shape(scores)[0]])
-    prob = tf.sigmoid(scores)
-    return tf.metrics.auc(labels, prob, num_thresholds=2000)
-
-
-def compute_confusion_matrix(scores, labels, num_classes):
-    """
-    Compute the confusion matrix for multi-class classifications.
-    :param scores: Tensor Predicted scores. Shape=[batch_size, num_classes]
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-        max_group_size should be 1
-    :param num_classes: Number of classes for multi-class classification.
-    :return: THe confusion matrix metric in the format of (metric_value, update_op) tuple.
-    """
-    labels = tf.squeeze(labels, -1)
-    probabilities = tf.nn.softmax(scores)
-    predicted_indices = tf.argmax(probabilities, 1)
-
-    con_matrix = tf.confusion_matrix(labels=labels, predictions=predicted_indices,
-                                     num_classes=num_classes)
-
-    con_matrix_sum = tf.Variable(tf.zeros(shape=(num_classes, num_classes), dtype=tf.int32),
-                                 trainable=False,
-                                 name="confusion_matrix_result",
-                                 collections=[tf.GraphKeys.LOCAL_VARIABLES])
-    update_op = tf.assign_add(con_matrix_sum, con_matrix)
-    return tf.convert_to_tensor(con_matrix_sum), update_op
-
-
-def compute_accuracy(scores, labels):
-    """
-    Compute the accuracy given the scores and labels.
-    :param scores: Tensor Predicted scores. Shape=[batch_size, num_classes]
-    :param labels: Tensor Labels. Shape=[batch_size, max_group_size]
-        max_group_size should be 1
-    :return: The accuracy (% of predicted_indices matches labels)
-    """
-    labels = tf.squeeze(labels, -1)
-    probabilities = tf.nn.softmax(scores)
-    predicted_indices = tf.argmax(probabilities, 1)
-    return tf.metrics.accuracy(labels, predicted_indices)
+    return metric_fn_lst
