@@ -31,7 +31,7 @@ jobs:
       run: |
         pip install -U flake8
         # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --ignore=E121,E123,E226,W292,E402 --max-line-length=160 --exclude=src/detext/model/bert/*.py --show-source --statistics
+        flake8 . --count --show-source --statistics
     - name: Test with pytest
       run: |
         pip install pytest
