@@ -8,10 +8,12 @@ DeText: A Deep Neural Text Understanding Framework
 **Relax like a sloth, let DeText do the understanding for you**
 
 ## What is it
-**DeText** is a <b>_De_</b>ep **_Text_** understanding framework for NLP related ranking, classification, and language generation tasks.  It leverages semantic matching using deep neural networks to 
+**DeText** is a <b>_De_</b>ep **_Text_** understanding framework for NLP related ranking, classification, 
+and language generation tasks.  It leverages semantic matching using deep neural networks to 
 understand member intents in search and recommender systems. 
-As a general NLP framework, DeText can be applied to many tasks, 
-including search & recommendation ranking, multi-class classification and query understanding tasks.
+
+As a general NLP framework, DeText can be applied to many tasks, including search & recommendation ranking, 
+multi-class classification and query understanding tasks.
 
 More details can be found in the [LinkedIn Engineering blog post](https://engineering.linkedin.com/blog/2020/open-sourcing-detext).
 
@@ -83,17 +85,23 @@ All these can be customized via hyper-parameters in the DeText template. Note th
     ```shell script
     pytest 
     ```
-1. Refer to the training manual ([TRAINING.md](TRAINING.md)) to find information about customizing the model:
+1. Refer to the training manual ([TRAINING.md](user_guide/TRAINING.md)) to find information about customizing the model:
     * Training data format and preparation
     * Key parameters to customize and train DeText models
     * Detailed information about all DeText training parameters for full customization
 1. Train a model using DeText (e.g., [run_detext.sh](test/resources/run_detext.sh))
 
 
-### Tutorial Demo
+### Tutorial
 If you would like a simple try out of the library, you can refer to the following notebooks for tutorial
-`notebooks/text_classification_demo.ipynb` shows how to use DeText to train a multi-class text classification model. A public query intent classification dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
-`notebooks/autocompletion.ipynb` shows how to use DeText to train a text ranking model. A public query auto completion dataset is used. The notebook includes detailed steps on data preparation, model training, model inference examples.
+* [text_classification_demo.ipynb](user_guide/notebooks/text_classification_demo.ipynb)
+
+    This notebook shows how to use DeText to train a multi-class text classification model on a public query intent 
+    classification dataset. Detailed instructions on data preparation, model training, model inference are included.
+* [autocompletion.ipynb](user_guide/notebooks/autocompletion.ipynb)
+
+    This notebook shows how to use DeText to train a text ranking model on a public query auto completion dataset.
+    Detailed steps on data preparation, model training, model inference examples are included.
 
 
 ## **Citation**
