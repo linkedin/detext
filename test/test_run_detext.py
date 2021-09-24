@@ -6,7 +6,6 @@ from pathlib import Path
 from subprocess import run, PIPE
 
 import tensorflow as tf
-
 from detext.run_detext import main
 from detext.utils.parsing_utils import InputFtrType, TaskType
 from detext.utils.testing.data_setup import DataSetup
@@ -46,9 +45,11 @@ class TestRunDeText(tf.test.TestCase, DataSetup):
         f"--{InputFtrType.DOC_ID_COLUMN_NAMES}", "doc_headline_id",
         f"--{InputFtrType.DENSE_FTRS_COLUMN_NAMES}", "dense_ftrs", "dense_ftrs_2",
         "--nums_dense_ftrs", "2", "2",
-        f"--{InputFtrType.SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs", "sparse_ftrs1",
+        f"--{InputFtrType.SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs",
+        f"--{InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs", "sparse_ftrs1",
         "--sparse_embedding_cross_ftr_combiner", "concat",
-        "--nums_sparse_ftrs", "10", "10",
+        "--nums_sparse_ftrs", "10",
+        "--nums_shallow_tower_sparse_ftrs", "10", "10",
         f"--{InputFtrType.WEIGHT_COLUMN_NAME}", "weight",
     ]
 
@@ -168,6 +169,8 @@ class TestRunDeText(tf.test.TestCase, DataSetup):
             "--nums_dense_ftrs", "8",
             f"--{InputFtrType.SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs",
             "--nums_sparse_ftrs", "30",
+            f"--{InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs",
+            "--nums_shallow_tower_sparse_ftrs", "30",
             "--pmetric", "auc",
             "--all_metrics", "accuracy", "auc",
             "--test_file", DataSetup.binary_cls_data_dir,
@@ -193,6 +196,8 @@ class TestRunDeText(tf.test.TestCase, DataSetup):
             f"--{InputFtrType.DOC_TEXT_COLUMN_NAMES}", "query_text",
             f"--{InputFtrType.USER_TEXT_COLUMN_NAMES}", "user_headline",
             f"--{InputFtrType.DENSE_FTRS_COLUMN_NAMES}", "dense_ftrs",
+            f"--{InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs",
+            "--nums_shallow_tower_sparse_ftrs", "30",
             "--nums_dense_ftrs", "8",
             "--num_classes", "6",
             "--pmetric", "accuracy",

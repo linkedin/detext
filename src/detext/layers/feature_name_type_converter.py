@@ -14,7 +14,8 @@ DEEP_FTR_TYPES = {
 
 WIDE_FTR_TYPES = {
     InputFtrType.DENSE_FTRS_COLUMN_NAMES,
-    InputFtrType.SPARSE_FTRS_COLUMN_NAMES
+    InputFtrType.SPARSE_FTRS_COLUMN_NAMES,
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES
 }
 
 MULTITASK_FTR_TYPES = {
@@ -25,7 +26,8 @@ DOC_FTR_TYPES = {
     InputFtrType.DOC_TEXT_COLUMN_NAMES,
     InputFtrType.DOC_ID_COLUMN_NAMES,
     InputFtrType.DENSE_FTRS_COLUMN_NAMES,
-    InputFtrType.SPARSE_FTRS_COLUMN_NAMES
+    InputFtrType.SPARSE_FTRS_COLUMN_NAMES,
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES
 }
 
 
@@ -97,7 +99,7 @@ def get_wide_features_inputs_classification(features, feature_type2name):
         for ftr_name in ftr_name_lst:
             feat = features[ftr_name]
             if ftr_type in DOC_FTR_TYPES:  # Expand the list dimension (axis=1) for classification
-                if ftr_type == InputFtrType.SPARSE_FTRS_COLUMN_NAMES:
+                if ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
                     feat = tf.sparse.expand_dims(feat, axis=1, name=ftr_name)
                 else:
                     feat = tf.expand_dims(feat, axis=1, name=ftr_name)

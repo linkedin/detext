@@ -32,6 +32,8 @@ class InputFtrType:
     DENSE_FTRS_COLUMN_NAMES = 'dense_ftrs_column_names'
     SPARSE_FTRS_COLUMN_NAMES = 'sparse_ftrs_column_names'
 
+    SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES = 'shallow_tower_sparse_ftrs_column_names'
+
 
 class OutputFtrType:
     """Output feature types """
@@ -71,6 +73,7 @@ class InternalFtrType:
 
     DEEP_FTR_BAG = 'deep_ftr_bag'
     WIDE_FTR_BAG = 'wide_ftr_bag'
+    SHALLOW_TOWER_FTR_BAG = 'shallow_tower_ftr_bag'
     MULTITASK_FTR_BAG = 'multitask_ftr_bag'
 
 
@@ -109,6 +112,11 @@ def get_feature_types():
     constant_to_name_tuples = filter(lambda x: not x[0].startswith(('_', '__')), vars(InputFtrType).items())  # [(QUERY, query), (WEIGHT, weight), ...]
     feature_types = [t[1] for t in constant_to_name_tuples]
     return feature_types
+
+
+def get_feature_nums(feature_name2num, feature_type2name, feature_type):
+    """ Returns the list of feature numbers wrt given feature type"""
+    return [feature_name2num[ftr_name] for ftr_name in feature_type2name.get(feature_type, [])]
 
 
 class HParams(Mapping):

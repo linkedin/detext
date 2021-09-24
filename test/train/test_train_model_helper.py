@@ -29,21 +29,6 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
     text_encoder_param = DataSetup.cnn_param
     id_encoder_param = DataSetup.id_encoder_param
     rep_layer_param = DataSetup.rep_layer_param
-    deep_match_param = HParams(use_dense_ftrs=True, use_deep=True,
-                               has_query=True,
-                               nums_dense_ftrs=nums_dense_ftrs,
-                               use_sparse_ftrs=False,
-                               sparse_embedding_size=10,
-                               sparse_embedding_cross_ftr_combiner='concat',
-                               sparse_embedding_same_ftr_combiner='sum',
-                               nums_sparse_ftrs=[],
-                               emb_sim_func=['inner'],
-                               rep_layer_param=rep_layer_param,
-                               ftr_mean=None, ftr_std=None,
-                               num_hidden=[3],
-                               rescale_dense_ftrs=False,
-                               num_classes=1,
-                               task_ids=None)
 
     inputs = OrderedDict(sorted({'query': DataSetup.query,
                                  'usr_headline': DataSetup.user_fields[0],
@@ -63,9 +48,26 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
                          InputFtrType.USER_TEXT_COLUMN_NAMES: ['usr_headline', 'usr_title'],
                          InputFtrType.USER_ID_COLUMN_NAMES: ['usrId_headline', 'usrId_title'],
                          InputFtrType.DENSE_FTRS_COLUMN_NAMES: ['dense_ftrs']}
+    feature_name2num = {'dense_ftrs': nums_dense_ftrs[0]}
+
+    deep_match_param = HParams(use_dense_ftrs=True,
+                               use_deep=True,
+                               has_query=True,
+                               use_sparse_ftrs=False,
+                               sparse_embedding_size=10,
+                               sparse_embedding_cross_ftr_combiner='concat',
+                               sparse_embedding_same_ftr_combiner='sum',
+                               emb_sim_func=['inner'],
+                               rep_layer_param=rep_layer_param,
+                               ftr_mean=None, ftr_std=None,
+                               num_hidden=[3],
+                               rescale_dense_ftrs=False,
+                               num_classes=1,
+                               task_ids=None)
 
     hparams = HParams(ltr_loss_fn='softmax', l1=0.1, l2=0.2, use_tfr_loss=False, tfr_loss_fn=None, tfr_lambda_weights=None, lr_bert=0.01, learning_rate=0.1,
                       feature_type2name=feature_type2name,
+                      feature_name2num=feature_name2num,
                       num_units_for_id_ftr=DataSetup.num_units_for_id_ftr,
                       vocab_hub_url_for_id_ftr='',
                       we_file_for_id_ftr='',
@@ -123,7 +125,7 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
         ckpt_dir = os.path.join(self.resource_dir, 'tmp_ckpt')
         ckpt_path = os.path.join(ckpt_dir, 'tmp_model')
 
-        detext_model = model.create_detext_model(self.feature_type2name, self.task_type, **self.deep_match_param)
+        detext_model = model.create_detext_model(self.feature_type2name, self.feature_name2num, task_type=self.task_type, **self.deep_match_param)
         outputs = detext_model.generate_training_scores(self.inputs)
         original_outputs = outputs
 
@@ -145,6 +147,7 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
                              InputFtrType.DENSE_FTRS_COLUMN_NAMES: 'wide_ftrs',
                              InputFtrType.LABEL_COLUMN_NAME: 'label',
                              InputFtrType.WEIGHT_COLUMN_NAME: 'weight'}
+        feature_name2num = {'wide_ftrs': 5}
 
         _, vocab_tf_table = vocab_utils.read_tf_vocab(self.vocab_file, self.UNK)
         vocab_table = vocab_utils.read_vocab(self.vocab_file)
@@ -156,8 +159,6 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
                           vocab_file=self.vocab_file, vocab_file_for_id_ftr=self.vocab_file,
                           PAD_ID=vocab_table[self.PAD], SEP_ID=vocab_table[self.SEP], CLS_ID=vocab_table[self.CLS],
                           mode=tf.estimator.ModeKeys.EVAL,
-                          nums_dense_ftrs=self.nums_dense_ftrs,
-                          nums_sparse_ftrs=self.nums_sparse_ftrs,
                           task_type=self.task_type,
                           vocab_table=vocab_tf_table, vocab_table_for_id_ftr=vocab_tf_table,
                           max_filter_window_size=3,
@@ -165,7 +166,8 @@ class TestTrainModelHelper(tf.test.TestCase, DataSetup):
                           vocab_hub_url_for_id_ftr='',
                           embedding_hub_url='',
                           embedding_hub_url_for_id_ftr='',
-                          feature_type2name=feature_type2name)
+                          feature_type2name=feature_type2name,
+                          feature_name2num=feature_name2num)
         train_model_helper.get_input_fn_common(data_dir, 1, tf.estimator.ModeKeys.TRAIN, hparams)
 
 

@@ -4,10 +4,9 @@ from typing import List, Optional, Dict
 import numpy as np
 import tensorflow_ranking as tfr
 from absl import logging
-from smart_arg import LateInit
-
 from detext.utils import parsing_utils
 from detext.utils.parsing_utils import InputFtrType, TaskType
+from smart_arg import LateInit
 
 
 class Arg:
@@ -17,6 +16,14 @@ class Arg:
         """Sets an attribute as empty list if it's LateInit"""
         if getattr(self, attr) is LateInit:
             setattr(self, attr, value)
+
+    def _set_list_kv_attrs(self, dict_attr, keys_attr, values_attr):
+        """Sets keys and values a dictionary with given attribute names"""
+        dictionary = getattr(self, dict_attr)
+        keys = getattr(self, keys_attr)
+        values = getattr(self, values_attr)
+        for k, v in zip(keys, values):
+            dictionary[k] = v
 
     def __post_init__(self):
         pass
@@ -108,6 +115,9 @@ class FeatureArg(Arg):
     sparse_ftrs_column_names: List[str] = LateInit  # Names of sparse features columns
     nums_sparse_ftrs: List[int] = LateInit  # Cardinality of each sparse features nums_sparse_ftrs[i] = cardinality(sparse_ftrs[i])
 
+    shallow_tower_sparse_ftrs_column_names: List[str] = LateInit  # Names of sparse features columns in shallow tower
+    nums_shallow_tower_sparse_ftrs: List[int] = LateInit  # Cardinality of each shallow tower sparse features nums_sparse_ftrs[i] = cardinality(sparse_ftrs[i])
+
     user_text_column_names: List[str] = LateInit  # Names of the user text fields
     doc_text_column_names: List[str] = LateInit  # Names of the document text fields
     user_id_column_names: List[str] = LateInit  # Names of the user id fields
@@ -141,6 +151,7 @@ class FeatureArg(Arg):
 
     # Late init variables inferred from post initialization. DO NOT pass any values to the following arguments
     feature_type2name: Dict[str, str] = LateInit  # Late init only. DO NOT pass value. Map of feature type to feature names
+    feature_name2num: Dict[str, int] = LateInit  # Late init only. DO NOT pass value. Map of feature names to feature nums
 
     has_query: bool = LateInit  # Late init only. DO NOT pass value. Whether there's query in feature names
     use_dense_ftrs: bool = LateInit  # Late init only. DO NOT pass value. Indicator of whether there's dense_ftrs
@@ -161,23 +172,31 @@ class FeatureArg(Arg):
 
     def __post_init__(self):
         super().__post_init__()
-        for attr in ['nums_dense_ftrs', 'nums_sparse_ftrs', 'user_id_column_names', 'sparse_ftrs_column_names', 'dense_ftrs_column_names',
-                     'user_text_column_names', 'doc_id_column_names', 'doc_text_column_names']:
+        for attr in ['nums_dense_ftrs', 'nums_sparse_ftrs', 'nums_shallow_tower_sparse_ftrs', 'user_id_column_names', 'shallow_tower_sparse_ftrs_column_names',
+                     'sparse_ftrs_column_names', 'dense_ftrs_column_names', 'user_text_column_names', 'doc_id_column_names', 'doc_text_column_names']:
             self._set_late_init_attr(attr, [])
 
-        # Assemble feature map
+        # Assemble feature name to num map
+        self.feature_name2num = dict()
+        self._set_list_kv_attrs('feature_name2num', 'dense_ftrs_column_names', 'nums_dense_ftrs')
+        self._set_list_kv_attrs('feature_name2num', 'sparse_ftrs_column_names', 'nums_sparse_ftrs')
+        self._set_list_kv_attrs('feature_name2num', 'shallow_tower_sparse_ftrs_column_names', 'nums_shallow_tower_sparse_ftrs')
+
+        # Assemble feature type to name map
         self.feature_type2name = dict()
-        all_ftr_names = list()
+        all_ftr_names = set()
         for ftr_type in parsing_utils.get_feature_types():
             assert hasattr(self, ftr_type), f'{ftr_type} must be defined in DeText argument parser'
             ftr_name = getattr(self, ftr_type)
-            if ftr_name:
-                self.feature_type2name[ftr_type] = ftr_name
+            if not ftr_name:
+                continue
 
-                ftr_name = [ftr_name] if not isinstance(ftr_name, list) else ftr_name
-                all_ftr_names += ftr_name
-                assert len(set(all_ftr_names)) == len(
-                    all_ftr_names), f'Duplicate feature names for feature type {ftr_type}'
+            self.feature_type2name[ftr_type] = ftr_name
+            ftr_name = [ftr_name] if not isinstance(ftr_name, list) else ftr_name
+            prev_ftr_num = len(all_ftr_names)
+            all_ftr_names.update(ftr_name)
+            if len(all_ftr_names) == prev_ftr_num:
+                logging.warning(f"Feature type {ftr_type} has duplicate features with self/other feature types")
 
         # Multi-task training: currently only support ranking tasks with both deep and dense features
         if self.task_ids:

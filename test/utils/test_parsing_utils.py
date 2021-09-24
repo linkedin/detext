@@ -2,7 +2,6 @@ import os
 import pickle
 
 import tensorflow as tf
-
 from detext.utils import parsing_utils
 from detext.utils.parsing_utils import InputFtrType
 
@@ -30,6 +29,7 @@ class TestParsingUtils(tf.test.TestCase):
             [InputFtrType.QUERY_COLUMN_NAME, InputFtrType.LABEL_COLUMN_NAME, InputFtrType.WEIGHT_COLUMN_NAME, InputFtrType.TASK_ID_COLUMN_NAME,
              InputFtrType.UID_COLUMN_NAME, InputFtrType.DOC_TEXT_COLUMN_NAMES,
              InputFtrType.USER_TEXT_COLUMN_NAMES, InputFtrType.DOC_ID_COLUMN_NAMES, InputFtrType.USER_ID_COLUMN_NAMES,
+             InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES,
              InputFtrType.DENSE_FTRS_COLUMN_NAMES, InputFtrType.SPARSE_FTRS_COLUMN_NAMES],
             parsing_utils.get_feature_types())
 
