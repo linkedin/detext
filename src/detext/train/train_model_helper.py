@@ -7,13 +7,13 @@ import tensorflow as tf
 from detext.layers.id_embed_layer import IdEmbedLayer
 from detext.layers.representation_layer import RepresentationLayer
 from detext.layers.representation_layer import _FTR_EXT_NAME_TO_ENCODER
+from detext.train.constant import Constant
 from detext.train.data_fn import input_fn_tfrecord
 from detext.train.loss import compute_loss
 from detext.train.model import create_detext_model
 from detext.train.optimization import create_optimizer
 from detext.utils.parsing_utils import HParams
 from detext.utils.parsing_utils import InputFtrType, iterate_items_with_list_val
-from detext.train.constant import Constant
 
 
 def get_model_input(inputs, feature_type2name: dict):
@@ -62,13 +62,12 @@ def get_input_fn_common(pattern, batch_size, mode, hparams):
                                 **_get_func_param_from_hparams(_get_input_fn_common, hparams, ('pattern', 'batch_size', 'mode')))
 
 
-def _get_input_fn_common(pattern, batch_size, mode, task_type, feature_type2name, nums_dense_ftrs, nums_sparse_ftrs):
+def _get_input_fn_common(pattern, batch_size, mode, task_type, feature_type2name, feature_name2num: dict):
     """ Returns the common input function used in DeText training and evaluation"""
     return lambda ctx: input_fn_tfrecord(
         input_pattern=pattern, batch_size=batch_size, mode=mode, task_type=task_type,
-        nums_dense_ftrs=nums_dense_ftrs,
-        nums_sparse_ftrs=nums_sparse_ftrs,
         feature_type2name=feature_type2name,
+        feature_name2num=feature_name2num,
         input_pipeline_context=ctx
     )
 

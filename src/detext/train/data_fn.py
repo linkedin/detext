@@ -1,7 +1,6 @@
 from functools import partial
 
 import tensorflow as tf
-
 from detext.train.constant import Constant
 from detext.utils.parsing_utils import get_input_files, InputFtrType, TaskType, iterate_items_with_list_val, as_list
 
@@ -15,29 +14,18 @@ def _read_specified_features(inputs, feature_type2name):
     return required_inputs
 
 
-def _set_dense_ftrs_padding_shapes(nums_dense_ftrs: list):
-    """Sets the dense feature padding shape"""
-    if not nums_dense_ftrs:
-        return
-
-    Constant()._FTR_TYPE2PADDED_SHAPE[InputFtrType.DENSE_FTRS_COLUMN_NAMES] = []
-    for n in nums_dense_ftrs:
-        Constant()._FTR_TYPE2PADDED_SHAPE[InputFtrType.DENSE_FTRS_COLUMN_NAMES].append(tf.TensorShape([None, n]))
-
-
-def _get_padded_shapes_and_values(feature_type2name: dict, nums_dense_ftrs: list):
+def _get_padded_shapes_and_values(feature_type2name: dict, feature_name2num: dict):
     """Returns padded_shape and padd_values for each feature
 
     :param feature_type2name Map from feature types to feature names EXCLUDING 'label'
     """
-    _set_dense_ftrs_padding_shapes(nums_dense_ftrs)
 
     ftr_name2padded_shapes = dict()
     ftr_name2padded_values = dict()
 
     for ftr_type, ftr_name_lst in iterate_items_with_list_val(feature_type2name):
         # Do not handle sparse features. It will be handled separately in the sparse batch function
-        if ftr_type == InputFtrType.SPARSE_FTRS_COLUMN_NAMES:
+        if ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
             continue
 
         # Padded shapes and values already known and initialized
@@ -47,8 +35,8 @@ def _get_padded_shapes_and_values(feature_type2name: dict, nums_dense_ftrs: list
         # The last dimension of dense features is known and could be different from each other. Therefore, we put the
         #   padded shape for each dense features column separately
         if ftr_type == InputFtrType.DENSE_FTRS_COLUMN_NAMES:
-            for ftr_name, padded_shape in zip(ftr_name_lst, Constant()._FTR_TYPE2PADDED_SHAPE[ftr_type]):
-                ftr_name2padded_shapes[ftr_name] = padded_shape
+            for ftr_name in ftr_name_lst:
+                ftr_name2padded_shapes[ftr_name] = tf.TensorShape([None, feature_name2num[ftr_name]])
                 ftr_name2padded_values[ftr_name] = Constant()._FTR_TYPE2PADDED_VALUE[ftr_type]
             continue
 
@@ -122,7 +110,7 @@ def _get_tfrecord_feature_parsing_schema(feature_type2name: dict, ftr_type_to_sc
     ftr_name_2_schema = dict()
     for ftr_type, ftr_name_lst in iterate_items_with_list_val(feature_type2name):
         for ftr_name in ftr_name_lst:
-            if ftr_type == InputFtrType.SPARSE_FTRS_COLUMN_NAMES:
+            if ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
                 ftr_name_2_schema = add_sparse_feature_schema_fn(ftr_name_2_schema, ftr_name)
             else:
                 ftr_name_2_schema[ftr_name] = ftr_type_to_schema[ftr_type]
@@ -142,7 +130,8 @@ def _cast_features_to_smaller_dtype(example, feature_type2name: dict):
             return t
 
     for ftr_type, ftr_name_lst in iterate_items_with_list_val(feature_type2name):
-        if ftr_type in {InputFtrType.TASK_ID_COLUMN_NAME, InputFtrType.UID_COLUMN_NAME, InputFtrType.SPARSE_FTRS_COLUMN_NAMES}:
+        if ftr_type in {InputFtrType.TASK_ID_COLUMN_NAME, InputFtrType.UID_COLUMN_NAME, InputFtrType.SPARSE_FTRS_COLUMN_NAMES,
+                        InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES}:
             continue
         for ftr_name in ftr_name_lst:
             example[ftr_name] = _cast_to_dtype_of_smaller_size(example[ftr_name])
@@ -173,7 +162,7 @@ _TASK_TYPE_TO_SPARSE_FTRS_TO_DENSE_FN_DICT = {
 def _convert_ftrs_to_dense_tensor(example, feature_type2name, ftr_type_to_dense_default_val):
     """Converts the VarLenFeature to dense format"""
     for ftr_type, ftr_name_lst in iterate_items_with_list_val(feature_type2name):
-        if ftr_type == InputFtrType.SPARSE_FTRS_COLUMN_NAMES:
+        if ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
             continue
 
         for ftr_name in ftr_name_lst:
@@ -186,14 +175,16 @@ def _convert_ftrs_to_dense_tensor(example, feature_type2name, ftr_type_to_dense_
 def _convert_sparse_ftrs_indices_and_values_to_dense_tensor(example, feature_type2name, task_type):
     """Converts the VarLenFeature of sparse features to dense format"""
     task_type_to_sparse_ftrs_to_dense_fn = _TASK_TYPE_TO_SPARSE_FTRS_TO_DENSE_FN_DICT[task_type]
-    if InputFtrType.SPARSE_FTRS_COLUMN_NAMES in feature_type2name:
-        for ftr_name in as_list(feature_type2name[InputFtrType.SPARSE_FTRS_COLUMN_NAMES]):
-            example = task_type_to_sparse_ftrs_to_dense_fn(example, ftr_name)
+    all_sparse_ftrs_names = set()
+    for ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
+        all_sparse_ftrs_names.update(as_list(feature_type2name.get(ftr_type, [])))
+    for ftr_name in all_sparse_ftrs_names:
+        example = task_type_to_sparse_ftrs_to_dense_fn(example, ftr_name)
 
     return example
 
 
-def _assemble_sparse_ftrs_ranking(example, feature_type2_name, nums_sparse_ftrs):
+def _assemble_sparse_ftrs_ranking(example, feature_type2_name, feature_name2num: dict):
     """Assembles ranking sparse feature indices and values into tf.SparseFeature
 
     Indices and values are removed from example in this process. E.g.,
@@ -201,11 +192,13 @@ def _assemble_sparse_ftrs_ranking(example, feature_type2_name, nums_sparse_ftrs)
         output_example = {'sparse_ftrs_a': SparseTensor}
     """
     example = _convert_sparse_ftrs_indices_and_values_to_dense_tensor(example, feature_type2_name, TaskType.RANKING)
-    ftr_name_lst = feature_type2_name.get(InputFtrType.SPARSE_FTRS_COLUMN_NAMES, [])
+    all_ftr_names = set(feature_type2_name.get(InputFtrType.SPARSE_FTRS_COLUMN_NAMES, []) + feature_type2_name.get(
+        InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES, []))
     labels = example[feature_type2_name[InputFtrType.LABEL_COLUMN_NAME]]
     list_size = tf.shape(labels)[-1]
 
-    for ftr_name, num_sparse_ftrs in zip(ftr_name_lst, nums_sparse_ftrs):
+    for ftr_name in all_ftr_names:
+        num_sparse_ftrs = feature_name2num[ftr_name]
         indices = tf.stack(
             [example.pop(_sparse_ftrs_indices0(ftr_name)), example.pop(_sparse_ftrs_indices1(ftr_name))],
             axis=1
@@ -218,7 +211,7 @@ def _assemble_sparse_ftrs_ranking(example, feature_type2_name, nums_sparse_ftrs)
     return example
 
 
-def _assemble_sparse_ftrs_classification(example, feature_type2_name, nums_sparse_ftrs):
+def _assemble_sparse_ftrs_classification(example, feature_type2_name, feature_name2num: dict):
     """Assembles classification sparse feature indices and values into tf.SparseFeature
 
     Indices and values are removed from example in this process. E.g.,
@@ -226,9 +219,11 @@ def _assemble_sparse_ftrs_classification(example, feature_type2_name, nums_spars
         output_example = {'sparse_ftrs_a': SparseTensor}
     """
     example = _convert_sparse_ftrs_indices_and_values_to_dense_tensor(example, feature_type2_name, TaskType.CLASSIFICATION)
-    ftr_name_lst = feature_type2_name.get(InputFtrType.SPARSE_FTRS_COLUMN_NAMES, [])
+    ftr_names = set(feature_type2_name.get(InputFtrType.SPARSE_FTRS_COLUMN_NAMES, []) + feature_type2_name.get(
+        InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES, []))
 
-    for ftr_name, num_sparse_ftrs in zip(ftr_name_lst, nums_sparse_ftrs):
+    for ftr_name in ftr_names:
+        num_sparse_ftrs = feature_name2num[ftr_name]
         indices = example.pop(_sparse_ftrs_indices0(ftr_name))
         indices = tf.expand_dims(indices, axis=-1)  # [N_non_zero, 1]
         values = example.pop(_sparse_ftrs_values(ftr_name))
@@ -240,7 +235,7 @@ def _assemble_sparse_ftrs_classification(example, feature_type2_name, nums_spars
     return example
 
 
-def _reshape_ftrs_to_group_wise(example, feature_type2name, nums_dense_ftrs: list):
+def _reshape_ftrs_to_group_wise(example, feature_type2name, feature_name2num: dict):
     """Reshapes features from [num_fts] to [num_ftrs_each_doc, num_docs]
 
     :param example Mapping from feature types to feature names
@@ -254,7 +249,8 @@ def _reshape_ftrs_to_group_wise(example, feature_type2name, nums_dense_ftrs: lis
         # The last dimension of dense features is known and could be different from each other. Therefore, we explicitly specify
         #    the last dimension of dense features
         if ftr_type == InputFtrType.DENSE_FTRS_COLUMN_NAMES:
-            for ftr_name, n in zip(as_list(feature_type2name[ftr_type]), nums_dense_ftrs):
+            for ftr_name in as_list(feature_type2name[ftr_type]):
+                n = feature_name2num[ftr_name]
                 example[ftr_name] = tf.reshape(example[ftr_name], shape=[num_docs, n])
             continue
 
@@ -267,8 +263,7 @@ def input_fn_tfrecord(input_pattern,
                       batch_size,
                       mode,
                       feature_type2name: dict,
-                      nums_dense_ftrs: list,
-                      nums_sparse_ftrs: list,
+                      feature_name2num: dict,
                       task_type=TaskType.RANKING,
                       block_length=100,
                       prefetch_size=tf.data.experimental.AUTOTUNE,
@@ -300,46 +295,44 @@ def input_fn_tfrecord(input_pattern,
     task_type_to_transform_fn = {
         # Ranking input transform function
         TaskType.RANKING:
-            lambda dataset, batch_size, mode, feature_type2name, output_buffer_size, prefetch_size, nums_sparse_ftrs, nums_dense_ftrs:
+            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size:
             ranking_transform_fn(dataset=dataset,
                                  batch_size=batch_size,
                                  mode=mode,
                                  feature_type2name=feature_type2name,
-                                 nums_dense_ftrs=nums_dense_ftrs,
-                                 nums_sparse_ftrs=nums_sparse_ftrs,
+                                 feature_name2num=feature_name2num,
                                  output_buffer_size=output_buffer_size,
                                  prefetch_size=prefetch_size),
         # Classification input transform function
         TaskType.CLASSIFICATION:
-            lambda dataset, batch_size, mode, feature_type2name, output_buffer_size, prefetch_size, nums_sparse_ftrs, *args:
+            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
             classification_transform_fn(dataset=dataset,
                                         batch_size=batch_size,
                                         mode=mode,
                                         feature_type2name=feature_type2name,
                                         output_buffer_size=output_buffer_size,
-                                        prefetch_size=prefetch_size,
-                                        nums_sparse_ftrs=nums_sparse_ftrs
+                                        feature_name2num=feature_name2num,
+                                        prefetch_size=prefetch_size
                                         ),
         # Binary classification input transform function
         TaskType.BINARY_CLASSIFICATION:
-            lambda dataset, batch_size, mode, feature_type2name, output_buffer_size, prefetch_size, *args:
+            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
             classification_transform_fn(dataset=dataset,
                                         batch_size=batch_size,
                                         mode=mode,
                                         feature_type2name=feature_type2name,
                                         output_buffer_size=output_buffer_size,
+                                        feature_name2num=feature_name2num,
                                         prefetch_size=prefetch_size,
-                                        nums_sparse_ftrs=nums_sparse_ftrs
                                         ),
     }
     return task_type_to_transform_fn[task_type](dataset,
                                                 batch_size,
                                                 mode,
                                                 feature_type2name,
+                                                feature_name2num,
                                                 output_buffer_size,
                                                 prefetch_size,
-                                                nums_sparse_ftrs,
-                                                nums_dense_ftrs
                                                 )
 
 
@@ -385,8 +378,7 @@ def ranking_transform_fn(dataset,
                          batch_size,
                          mode,
                          feature_type2name,
-                         nums_dense_ftrs,
-                         nums_sparse_ftrs,
+                         feature_name2num,
                          output_buffer_size,
                          prefetch_size=tf.data.experimental.AUTOTUNE,
                          num_parallel_calls=tf.data.experimental.AUTOTUNE):
@@ -399,29 +391,29 @@ def ranking_transform_fn(dataset,
         dataset = dataset.shuffle(output_buffer_size)
         dataset = dataset.repeat()
 
-    def _process_data(record, features_schema, nums_dense_ftrs):
+    def _process_data(record, features_schema, feature_name2num):
         example = tf.io.parse_single_example(serialized=record, features=features_schema)
 
         example = _cast_features_to_smaller_dtype(example, feature_type2name)
         example = _convert_ftrs_to_dense_tensor(example, feature_type2name, Constant()._RANKING_FTR_TYPE_TO_DENSE_DEFAULT_VAL)
-        example = _assemble_sparse_ftrs_ranking(example, feature_type2name, nums_sparse_ftrs)
+        example = _assemble_sparse_ftrs_ranking(example, feature_type2name, feature_name2num)
 
         feature_type_to_squeeze = [InputFtrType.QUERY_COLUMN_NAME, InputFtrType.USER_ID_COLUMN_NAMES,
                                    InputFtrType.USER_TEXT_COLUMN_NAMES, InputFtrType.WEIGHT_COLUMN_NAME,
                                    InputFtrType.TASK_ID_COLUMN_NAME,
                                    InputFtrType.UID_COLUMN_NAME]
         example = _squeeze_ftrs(example, feature_type2name, feature_type_to_squeeze)
-        example = _reshape_ftrs_to_group_wise(example, feature_type2name, nums_dense_ftrs)
+        example = _reshape_ftrs_to_group_wise(example, feature_type2name, feature_name2num)
 
         example = _read_specified_features(example, feature_type2name)
         features, labels = _split_features_and_labels(example, feature_type2name)
         return features, labels
 
     features_schema = _get_tfrecord_feature_parsing_schema(feature_type2name, Constant()._RANKING_FTR_TYPE_TO_SCHEMA, TaskType.RANKING)
-    dataset = dataset.map(partial(_process_data, features_schema=features_schema, nums_dense_ftrs=nums_dense_ftrs),
+    dataset = dataset.map(partial(_process_data, features_schema=features_schema, feature_name2num=feature_name2num),
                           num_parallel_calls=num_parallel_calls)
 
-    dataset = batch_dataset(dataset, feature_type2name, nums_dense_ftrs, batch_size).map(
+    dataset = batch_dataset(dataset, feature_type2name, feature_name2num, batch_size).map(
         partial(_add_default_ftr_field, feature_type2name=feature_type2name),
         num_parallel_calls=num_parallel_calls
     )
@@ -435,7 +427,10 @@ def _sparse_batch_fn(features, labels, feature_type2name, padded_shapes, padded_
     inputs_padded_values, labels_padded_values = padded_values
 
     sparse_inputs = {}
-    for sparse_ftrs_name in feature_type2name[InputFtrType.SPARSE_FTRS_COLUMN_NAMES]:
+    all_sparse_ftrs_names = set()
+    for ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
+        all_sparse_ftrs_names.update(feature_type2name.get(ftr_type, []))
+    for sparse_ftrs_name in all_sparse_ftrs_names:
         sparse_inputs[sparse_ftrs_name] = features.pop(sparse_ftrs_name).batch(batch_size)
 
     features = {ftr_name: ds.padded_batch(batch_size=batch_size,
@@ -449,15 +444,15 @@ def _sparse_batch_fn(features, labels, feature_type2name, padded_shapes, padded_
     return tf.data.Dataset.zip((features, labels))
 
 
-def batch_dataset(dataset: tf.data.Dataset, feature_type2name, nums_dense_ftrs, batch_size):
+def batch_dataset(dataset: tf.data.Dataset, feature_type2name, feature_name2num, batch_size):
     """Performs batching on ranking dataset
 
     When there's no sparse features, padded_batch() is enough. When there are sparse features, we use batching function specific for sparse features
     """
-    padded_shapes, padded_values = _get_padded_shapes_and_values(feature_type2name, nums_dense_ftrs)
+    padded_shapes, padded_values = _get_padded_shapes_and_values(feature_type2name, feature_name2num)
 
     # Use padded_batch() if no sparse features
-    if InputFtrType.SPARSE_FTRS_COLUMN_NAMES not in feature_type2name:
+    if InputFtrType.SPARSE_FTRS_COLUMN_NAMES not in feature_type2name and InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES not in feature_type2name:
         # drop_remainder=True to avoid input batch_size=0 issue in evaluation mode in multi gpu training
         return dataset.padded_batch(batch_size, padded_shapes=padded_shapes, padding_values=padded_values, drop_remainder=True)
 
@@ -473,8 +468,8 @@ def classification_transform_fn(dataset,
                                 batch_size,
                                 mode,
                                 feature_type2name,
+                                feature_name2num,
                                 output_buffer_size,
-                                nums_sparse_ftrs,
                                 prefetch_size=tf.data.experimental.AUTOTUNE,
                                 num_parallel_calls=tf.data.experimental.AUTOTUNE):
     """ Preprocesses datasets for classification task including
@@ -491,7 +486,7 @@ def classification_transform_fn(dataset,
 
         example = _cast_features_to_smaller_dtype(example, feature_type2name)
         example = _convert_ftrs_to_dense_tensor(example, feature_type2name, Constant()._CLASSIFICATION_FTR_TYPE_TO_DENSE_DEFAULT_VAL)
-        example = _assemble_sparse_ftrs_classification(example, feature_type2name, nums_sparse_ftrs)
+        example = _assemble_sparse_ftrs_classification(example, feature_type2name, feature_name2num)
 
         feature_type_to_squeeze = [InputFtrType.QUERY_COLUMN_NAME, InputFtrType.USER_ID_COLUMN_NAMES,
                                    InputFtrType.USER_TEXT_COLUMN_NAMES, InputFtrType.DOC_TEXT_COLUMN_NAMES, InputFtrType.DOC_ID_COLUMN_NAMES,

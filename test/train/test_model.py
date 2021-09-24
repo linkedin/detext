@@ -5,7 +5,6 @@ from collections import OrderedDict
 
 import numpy as np
 import tensorflow as tf
-
 from detext.train import model
 from detext.utils.parsing_utils import HParams, InputFtrType, TaskType
 from detext.utils.testing.data_setup import DataSetup
@@ -25,21 +24,6 @@ class TestModel(tf.test.TestCase, DataSetup):
     text_encoder_param = DataSetup.cnn_param
     id_encoder_param = DataSetup.id_encoder_param
     rep_layer_param = DataSetup.rep_layer_param
-    deep_match_param = HParams(use_dense_ftrs=True, use_deep=True,
-                               use_sparse_ftrs=True,
-                               nums_sparse_ftrs=DataSetup.nums_sparse_ftrs,
-                               sparse_embedding_size=DataSetup.sparse_embedding_size,
-                               nums_dense_ftrs=nums_dense_ftrs,
-                               sparse_embedding_cross_ftr_combiner='concat',
-                               sparse_embedding_same_ftr_combiner='sum',
-                               has_query=True,
-                               emb_sim_func=['inner'],
-                               rep_layer_param=rep_layer_param,
-                               ftr_mean=None, ftr_std=None,
-                               num_hidden=[10],
-                               rescale_dense_ftrs=False,
-                               num_classes=1,
-                               task_ids=None)
 
     QUERY_COLUMN_NAME_VAL = 'query'
     DENSE_FTRS_COLUMN_NAME_VAL = 'dense_ftrs'
@@ -77,10 +61,29 @@ class TestModel(tf.test.TestCase, DataSetup):
                          InputFtrType.USER_ID_COLUMN_NAMES: ['usrId_headline', 'usrId_title'],
                          InputFtrType.DENSE_FTRS_COLUMN_NAMES: [DENSE_FTRS_COLUMN_NAME_VAL],
                          InputFtrType.SPARSE_FTRS_COLUMN_NAMES: [SPARSE_FTRS_COLUMN_NAME_VAL]}
+    feature_name2num = {DENSE_FTRS_COLUMN_NAME_VAL: nums_dense_ftrs[0],
+                        SPARSE_FTRS_COLUMN_NAME_VAL: DataSetup.nums_sparse_ftrs[0]}
+
+    # deep match param
+    deep_match_param = HParams(feature_name2num=feature_name2num,
+                               use_dense_ftrs=True,
+                               use_deep=True,
+                               use_sparse_ftrs=True,
+                               sparse_embedding_size=DataSetup.sparse_embedding_size,
+                               sparse_embedding_cross_ftr_combiner='concat',
+                               sparse_embedding_same_ftr_combiner='sum',
+                               has_query=True,
+                               emb_sim_func=['inner'],
+                               rep_layer_param=rep_layer_param,
+                               ftr_mean=None, ftr_std=None,
+                               num_hidden=[10],
+                               rescale_dense_ftrs=False,
+                               num_classes=1,
+                               task_ids=None)
 
     def testModelNetworkRanking(self):
         """Tests whether model can produce correct ranking output"""
-        detext_model = model.create_detext_model(self.feature_type2name, TaskType.RANKING, **self.deep_match_param)
+        detext_model = model.create_detext_model(self.feature_type2name, task_type=TaskType.RANKING, **self.deep_match_param)
         outputs = detext_model.generate_training_scores(self.ranking_inputs)
         self.assertAllEqual(tf.shape(outputs), [2, 3])
 
@@ -90,7 +93,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         deep_match_param = copy.copy(self.deep_match_param)
         deep_match_param.num_classes = num_classes
 
-        detext_model = model.create_detext_model(self.feature_type2name, TaskType.CLASSIFICATION, **deep_match_param)
+        detext_model = model.create_detext_model(self.feature_type2name, task_type=TaskType.CLASSIFICATION, **deep_match_param)
         outputs = detext_model.generate_training_scores(self.cls_inputs)
         self.assertAllEqual(tf.shape(outputs), [2, num_classes])
 
@@ -100,7 +103,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         deep_match_param = copy.copy(self.deep_match_param)
         deep_match_param.num_classes = num_classes
 
-        detext_model = model.create_detext_model(self.feature_type2name, TaskType.BINARY_CLASSIFICATION, **deep_match_param)
+        detext_model = model.create_detext_model(self.feature_type2name, task_type=TaskType.BINARY_CLASSIFICATION, **deep_match_param)
         outputs = detext_model.generate_training_scores(self.cls_inputs)
         self.assertAllEqual(tf.shape(outputs), [2])
 
@@ -115,7 +118,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         inputs = copy.copy(self.ranking_inputs)
         inputs[task_id_column_name_val] = tf.constant([1, 0], dtype=tf.dtypes.int64)
 
-        detext_model = model.create_detext_model(feature_type2name, TaskType.RANKING, **deep_match_param)
+        detext_model = model.create_detext_model(feature_type2name, task_type=TaskType.RANKING, **deep_match_param)
         outputs = detext_model.generate_training_scores(inputs)
 
         self.assertAllEqual(tf.shape(outputs), [2, 3])
@@ -134,11 +137,10 @@ class TestModel(tf.test.TestCase, DataSetup):
         feature_type2name.pop(InputFtrType.QUERY_COLUMN_NAME)
         feature_type2name.pop(InputFtrType.DENSE_FTRS_COLUMN_NAMES)
 
-        deep_match_param.nums_dense_ftrs = []
         deep_match_param.use_dense_ftrs = False
         deep_match_param.has_query = False
 
-        detext_model = model.create_detext_model(feature_type2name, TaskType.CLASSIFICATION, **deep_match_param)
+        detext_model = model.create_detext_model(feature_type2name, task_type=TaskType.CLASSIFICATION, **deep_match_param)
         outputs = detext_model.generate_training_scores(inputs)
 
         self.assertAllEqual(outputs.shape, [2, num_classes])
@@ -159,7 +161,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         deep_match_param.use_deep = False
         deep_match_param.use_sparse_ftrs = False
 
-        detext_model = model.create_detext_model(feature_type2name, TaskType.CLASSIFICATION, **deep_match_param)
+        detext_model = model.create_detext_model(feature_type2name, task_type=TaskType.CLASSIFICATION, **deep_match_param)
         outputs = detext_model.generate_training_scores(inputs)
 
         self.assertAllEqual(outputs.shape, [2, num_classes])
@@ -180,7 +182,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         deep_match_param.use_deep = False
         deep_match_param.use_dense_ftrs = False
 
-        detext_model = model.create_detext_model(feature_type2name, TaskType.CLASSIFICATION, **deep_match_param)
+        detext_model = model.create_detext_model(feature_type2name, task_type=TaskType.CLASSIFICATION, **deep_match_param)
         outputs = detext_model.generate_training_scores(inputs)
 
         self.assertAllEqual(outputs.shape, [2, num_classes])
@@ -210,7 +212,7 @@ class TestModel(tf.test.TestCase, DataSetup):
         model_dir = os.path.join(self.resource_dir, 'tmp_model')
 
         # Test model output shape
-        detext_model = model.create_detext_model(feature_type2name, TaskType.RANKING, **self.deep_match_param)
+        detext_model = model.create_detext_model(feature_type2name, task_type=TaskType.RANKING, **self.deep_match_param)
 
         outputs = detext_model.generate_training_scores(inputs)
         self.assertAllEqual(tf.shape(outputs), [2, 3])

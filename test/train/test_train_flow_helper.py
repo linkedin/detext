@@ -1,7 +1,6 @@
 import copy
 
 import tensorflow as tf
-
 from detext.train import data_fn, model, train_flow_helper
 from detext.train.constant import Constant
 from detext.utils.parsing_utils import HParams, InputFtrType, TaskType
@@ -30,22 +29,6 @@ class TestTrainFlowHelper(tf.test.TestCase, DataSetup):
     rep_layer_param.num_doc_id_fields = 1
     rep_layer_param.num_user_id_fields = 1
 
-    deep_match_param = HParams(use_dense_ftrs=True, use_deep=True,
-                               has_query=True,
-                               use_sparse_ftrs=False,
-                               nums_sparse_ftrs=[],
-                               sparse_embedding_cross_ftr_combiner='concat',
-                               sparse_embedding_same_ftr_combiner='sum',
-                               sparse_embedding_size=10,
-                               emb_sim_func=['inner'],
-                               rep_layer_param=rep_layer_param,
-                               ftr_mean=None, ftr_std=None,
-                               num_hidden=[3],
-                               rescale_dense_ftrs=False,
-                               nums_dense_ftrs=nums_dense_ftrs,
-                               num_classes=1,
-                               task_ids=None)
-
     feature_type2name = {InputFtrType.QUERY_COLUMN_NAME: 'query',
                          InputFtrType.DOC_TEXT_COLUMN_NAMES: ['doc_completedQuery'],
                          InputFtrType.DOC_ID_COLUMN_NAMES: ['docId_completedQuery'],
@@ -54,6 +37,23 @@ class TestTrainFlowHelper(tf.test.TestCase, DataSetup):
                          InputFtrType.DENSE_FTRS_COLUMN_NAMES: ['wide_ftrs'],
                          InputFtrType.LABEL_COLUMN_NAME: 'label',
                          InputFtrType.WEIGHT_COLUMN_NAME: 'weight'}
+    feature_name2num = {'wide_ftrs': nums_dense_ftrs[0]}
+
+    deep_match_param = HParams(feature_name2num=feature_name2num,
+                               use_dense_ftrs=True,
+                               use_deep=True,
+                               has_query=True,
+                               use_sparse_ftrs=False,
+                               sparse_embedding_cross_ftr_combiner='concat',
+                               sparse_embedding_same_ftr_combiner='sum',
+                               sparse_embedding_size=10,
+                               emb_sim_func=['inner'],
+                               rep_layer_param=rep_layer_param,
+                               ftr_mean=None, ftr_std=None,
+                               num_hidden=[3],
+                               rescale_dense_ftrs=False,
+                               num_classes=1,
+                               task_ids=None)
 
     def testPredict(self):
         """Tests predict()"""
@@ -61,11 +61,11 @@ class TestTrainFlowHelper(tf.test.TestCase, DataSetup):
                                             batch_size=self.batch_size,
                                             mode=tf.estimator.ModeKeys.EVAL,
                                             feature_type2name=self.feature_type2name,
-                                            nums_dense_ftrs=self.nums_dense_ftrs,
+                                            feature_name2num=self.feature_name2num,
                                             input_pipeline_context=None,
-                                            nums_sparse_ftrs=[])
+                                            )
 
-        detext_model = model.create_detext_model(self.feature_type2name, self.task_type, **self.deep_match_param)
+        detext_model = model.create_detext_model(self.feature_type2name, task_type=self.task_type, **self.deep_match_param)
         predicted_output = train_flow_helper.predict_with_additional_info(dataset, detext_model, self.feature_type2name)
 
         for output in predicted_output:

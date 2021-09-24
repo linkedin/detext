@@ -8,7 +8,7 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 TF_VERSION_QUANTIFIER = '>=2.4,<2.5'
-PACKAGES = ['smart-arg==0.4', 'bump2version==1.0.0', 'twine==3.2.0', f'tf-models-official{TF_VERSION_QUANTIFIER}',
+PACKAGES = ['smart-arg==0.4', 'bump2version', 'twine==3.2.0', f'tf-models-official{TF_VERSION_QUANTIFIER}',
             f'tensorflow{TF_VERSION_QUANTIFIER}', f'tensorflow-text{TF_VERSION_QUANTIFIER}', 'tensorflow_ranking',
             'future<0.14']
 
@@ -24,7 +24,7 @@ setuptools.setup(
                  "License :: OSI Approved"],
     license='BSD-2-CLAUSE',
     # DO NOT CHANGE: version should be incremented by bump2version when releasing. See pypi_release.sh
-    version='2.1.1',
+    version='3.1.0',
     package_dir={'': 'src'},
     packages=setuptools.find_packages('src'),
     include_package_data=True,

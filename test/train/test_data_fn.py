@@ -1,12 +1,11 @@
 from itertools import product
 
 import tensorflow as tf
-from official.utils.misc import distribution_utils
-
 from detext.train import data_fn, constant
 from detext.utils import vocab_utils
 from detext.utils.parsing_utils import InputFtrType, TaskType, iterate_items_with_list_val
 from detext.utils.testing.data_setup import DataSetup
+from official.utils.misc import distribution_utils
 
 
 class TestData(tf.test.TestCase, DataSetup):
@@ -61,15 +60,15 @@ class TestData(tf.test.TestCase, DataSetup):
     def _testRankingInputFnBuilderTfrecord(self, strategy, feature_type2name):
         """ Tests function input_fn_builder() for given strategy """
         data_dir = self.ranking_data_dir
+        feature_name2num = {'dense_ftrs': 2, 'sparse_ftrs': self.nums_sparse_ftrs[0]}
 
         def _input_fn_tfrecord(ctx):
             return data_fn.input_fn_tfrecord(input_pattern=data_dir,
                                              batch_size=batch_size,
                                              mode=tf.estimator.ModeKeys.EVAL,
                                              feature_type2name=feature_type2name,
-                                             nums_dense_ftrs=[2],
-                                             input_pipeline_context=ctx,
-                                             nums_sparse_ftrs=self.nums_sparse_ftrs)
+                                             feature_name2num=feature_name2num,
+                                             input_pipeline_context=ctx)
 
         batch_size = 2
         if strategy is not None:
@@ -160,15 +159,17 @@ class TestData(tf.test.TestCase, DataSetup):
             InputFtrType.USER_TEXT_COLUMN_NAMES: ['user_headline'],
             InputFtrType.DENSE_FTRS_COLUMN_NAMES: 'dense_ftrs',
         }
+        feature_name2num = {
+            'dense_ftrs': 8
+        }
 
         batch_size = 2
         dataset = data_fn.input_fn_tfrecord(input_pattern=data_dir,
                                             batch_size=batch_size,
                                             mode=tf.estimator.ModeKeys.EVAL,
-                                            nums_dense_ftrs=[8],
                                             task_type=TaskType.CLASSIFICATION,
                                             feature_type2name=feature_type2name,
-                                            nums_sparse_ftrs=self.nums_sparse_ftrs)
+                                            feature_name2num=feature_name2num)
 
         for features, label in dataset:
             # First dimension of data should be batch_size
@@ -196,17 +197,22 @@ class TestData(tf.test.TestCase, DataSetup):
 
         feature_type2name = {
             InputFtrType.LABEL_COLUMN_NAME: 'label',
-            InputFtrType.SPARSE_FTRS_COLUMN_NAMES: ['sparse_ftrs']
+            InputFtrType.SPARSE_FTRS_COLUMN_NAMES: ['sparse_ftrs'],
+            InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: ['shallow_tower_sparse_ftrs', 'sparse_ftrs']
+        }
+        feature_name2num = {
+            'sparse_ftrs': 20,
+            'shallow_tower_sparse_ftrs': 20
         }
 
         batch_size = 2
         dataset = data_fn.input_fn_tfrecord(input_pattern=data_dir,
                                             batch_size=batch_size,
                                             mode=tf.estimator.ModeKeys.EVAL,
-                                            nums_dense_ftrs=[],
                                             task_type=TaskType.BINARY_CLASSIFICATION,
                                             feature_type2name=feature_type2name,
-                                            nums_sparse_ftrs=self.nums_sparse_ftrs)
+                                            feature_name2num=feature_name2num
+                                            )
 
         for features, label in dataset:
             # First dimension of data should be batch_size
@@ -259,14 +265,16 @@ class TestData(tf.test.TestCase, DataSetup):
             InputFtrType.WEIGHT_COLUMN_NAME: 'weight',
             InputFtrType.TASK_ID_COLUMN_NAME: 'task_id_field'
         }
+        feature_name2num = {
+            'dense_ftrs': 2
+        }
 
         batch_size = 5
         dataset = data_fn.input_fn_tfrecord(input_pattern=data_dir,
                                             batch_size=batch_size,
                                             mode=tf.estimator.ModeKeys.EVAL,
-                                            nums_dense_ftrs=[2],
                                             feature_type2name=feature_type2name,
-                                            nums_sparse_ftrs=self.nums_sparse_ftrs)
+                                            feature_name2num=feature_name2num)
 
         for features, label in dataset:
             # First dimension of data should be batch_size

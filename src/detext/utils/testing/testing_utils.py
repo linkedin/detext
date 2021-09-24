@@ -271,7 +271,10 @@ def create_sample_tfrecord_for_binary_classification(out_file):
             "user_headline": _bytes_feature([b"user headline ?"]),
 
             "sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
-            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
+            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0]),
+
+            "shallow_tower_sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "shallow_tower_sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
         }
         example_proto = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(example_proto.SerializeToString())
@@ -285,7 +288,10 @@ def create_sample_tfrecord_for_binary_classification(out_file):
             "user_headline": _bytes_feature([b"user headline ?"]),
 
             "sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
-            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
+            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0]),
+
+            "shallow_tower_sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "shallow_tower_sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
         }
         example_proto = tf.train.Example(features=tf.train.Features(feature=features))
         writer.write(example_proto.SerializeToString())
@@ -295,7 +301,7 @@ if __name__ == '__main__':
     from detext.utils.testing.data_setup import DataSetup
 
     # make_we_file(DataSetup.vocab_file, embedding_size=DataSetup.num_units, output_path=DataSetup.we_file)
-    # out_file = DataSetup.binary_cls_data_dir + '/test.tfrecord'
-    # create_sample_tfrecord_for_binary_classification(out_file)
-    out_file = DataSetup.ranking_data_dir + '/test.tfrecord'
-    create_sample_tfrecord_for_ranking(out_file)
+    out_file = DataSetup.binary_cls_data_dir + '/test.tfrecord'
+    create_sample_tfrecord_for_binary_classification(out_file)
+    # out_file = DataSetup.ranking_data_dir + '/test.tfrecord'
+    # create_sample_tfrecord_for_ranking(out_file)

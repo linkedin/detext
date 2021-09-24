@@ -1,6 +1,6 @@
-import tensorflow as tf
-
 from functools import partial
+
+import tensorflow as tf
 from detext.layers.feature_grouper import FeatureGrouper
 from detext.layers.feature_name_type_converter import FeatureNameTypeConverter, DEEP_FTR_TYPES
 from detext.layers.feature_normalizer import FeatureNormalizer
@@ -9,8 +9,9 @@ from detext.layers.interaction_layer import InteractionLayer
 from detext.layers.output_transform_layer import OutputTransformLayer
 from detext.layers.representation_layer import RepresentationLayer
 from detext.layers.scoring_layer import ScoringLayer
+from detext.layers.shallow_tower_layer import ShallowTowerLayer
 from detext.layers.sparse_embedding_layer import SparseEmbeddingLayer
-from detext.utils.parsing_utils import InputFtrType, TaskType, OutputFtrType, InternalFtrType, iterate_items_with_list_val, as_list
+from detext.utils.parsing_utils import InputFtrType, TaskType, OutputFtrType, InternalFtrType, iterate_items_with_list_val, as_list, get_feature_nums
 
 TASK_TYPE_TO_TRAINING_OUTPUT_NAME = {
     TaskType.CLASSIFICATION: OutputFtrType.DETEXT_CLS_LOGITS,
@@ -23,6 +24,8 @@ FTR_TYPE_TO_KERAS_INPUT_RANK = {
 
     InputFtrType.DENSE_FTRS_COLUMN_NAMES: lambda name, num_dense_ftrs: tf.keras.Input(shape=(None, num_dense_ftrs), dtype='float32', name=name),
     InputFtrType.SPARSE_FTRS_COLUMN_NAMES: lambda name, num_sparse_ftrs: tf.keras.Input(shape=(None, num_sparse_ftrs), sparse=True, dtype='float32', name=name),
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: lambda name, num_sparse_ftrs: tf.keras.Input(shape=(None, num_sparse_ftrs), sparse=True,
+                                                                                                      dtype='float32', name=name),
 
     InputFtrType.TASK_ID_COLUMN_NAME: lambda name, *args: tf.keras.Input(shape=(), dtype='int64', name=name),
     InputFtrType.DOC_TEXT_COLUMN_NAMES: lambda name, *args: tf.keras.Input(shape=(None,), dtype='string', name=name),
@@ -41,6 +44,7 @@ FTR_TYPE_TO_SCORER_TENSOR_SPEC_RANKING = {
     InputFtrType.TASK_ID_COLUMN_NAME: lambda name, *args: tf.TensorSpec(shape=(None,), dtype='int64', name=name),
     InputFtrType.DENSE_FTRS_COLUMN_NAMES: lambda name, num_dense_ftrs: tf.TensorSpec(shape=(None, None, num_dense_ftrs), dtype='float32', name=name),
     InputFtrType.SPARSE_FTRS_COLUMN_NAMES: lambda num_sparse_ftrs: tf.SparseTensorSpec(shape=(None, None, num_sparse_ftrs), dtype='float32'),
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: lambda num_sparse_ftrs: tf.SparseTensorSpec(shape=(None, None, num_sparse_ftrs), dtype='float32')
 }
 
 FTR_TYPE_TO_SCORER_TENSOR_SPEC_CLASSIFICATION = {
@@ -53,6 +57,7 @@ FTR_TYPE_TO_SCORER_TENSOR_SPEC_CLASSIFICATION = {
     InputFtrType.TASK_ID_COLUMN_NAME: lambda name, *args: tf.TensorSpec(shape=(None,), dtype='int64', name=name),
     InputFtrType.DENSE_FTRS_COLUMN_NAMES: lambda name, num_dense_ftrs: tf.TensorSpec(shape=(None, num_dense_ftrs), dtype='float32', name=name),
     InputFtrType.SPARSE_FTRS_COLUMN_NAMES: lambda num_sparse_ftrs: tf.SparseTensorSpec(shape=(None, num_sparse_ftrs), dtype='float32'),
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: lambda num_sparse_ftrs: tf.SparseTensorSpec(shape=(None, num_sparse_ftrs), dtype='float32'),
 }
 
 TASK_TYPE_TO_SCORER_TENSOR_SPEC = {
@@ -90,6 +95,8 @@ FTR_TYPE_TO_KERAS_INPUT_CLS = {
 
     InputFtrType.DENSE_FTRS_COLUMN_NAMES: lambda name, num_dense_ftrs: tf.keras.Input(shape=(num_dense_ftrs,), dtype='float32', name=name),
     InputFtrType.SPARSE_FTRS_COLUMN_NAMES: lambda name, num_sparse_ftrs: tf.keras.Input(shape=(num_sparse_ftrs,), sparse=True, dtype='float32', name=name),
+    InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: lambda name, num_sparse_ftrs: tf.keras.Input(shape=(num_sparse_ftrs,), sparse=True, dtype='float32',
+                                                                                                      name=name),
 
     InputFtrType.TASK_ID_COLUMN_NAME: lambda name, *args: tf.keras.Input(shape=(), dtype='int64', name=name),
     InputFtrType.DOC_TEXT_COLUMN_NAMES: lambda name, *args: tf.keras.Input(shape=(), dtype='string', name=name),
@@ -99,7 +106,7 @@ FTR_TYPE_TO_KERAS_INPUT_CLS = {
 }
 
 
-def create_keras_inputs(feature_type2name, nums_dense_ftrs, nums_sparse_ftrs, task_type):
+def create_keras_inputs(feature_type2name, feature_name2num, task_type):
     """Returns a dictionary mapping feature names to input shape"""
     feature_dct = dict()
     input_schema = FTR_TYPE_TO_KERAS_INPUT_RANK if task_type == TaskType.RANKING else FTR_TYPE_TO_KERAS_INPUT_CLS
@@ -107,11 +114,11 @@ def create_keras_inputs(feature_type2name, nums_dense_ftrs, nums_sparse_ftrs, ta
         if ftr_type not in input_schema:
             continue
         if ftr_type == InputFtrType.DENSE_FTRS_COLUMN_NAMES:
-            for ftr_name, num_dense_ftrs in zip(ftr_name_lst, nums_dense_ftrs):
-                feature_dct[ftr_name] = input_schema[ftr_type](ftr_name, num_dense_ftrs)
-        elif ftr_type == InputFtrType.SPARSE_FTRS_COLUMN_NAMES:
-            for ftr_name, num_sparse_ftrs in zip(ftr_name_lst, nums_sparse_ftrs):
-                feature_dct[ftr_name] = input_schema[ftr_type](ftr_name, num_sparse_ftrs)
+            for ftr_name in ftr_name_lst:
+                feature_dct[ftr_name] = input_schema[ftr_type](ftr_name, feature_name2num[ftr_name])
+        elif ftr_type in [InputFtrType.SPARSE_FTRS_COLUMN_NAMES, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]:
+            for ftr_name in ftr_name_lst:
+                feature_dct[ftr_name] = input_schema[ftr_type](ftr_name, feature_name2num[ftr_name])
         else:
             for ftr_name in ftr_name_lst:
                 feature_dct[ftr_name] = input_schema[ftr_type](ftr_name, None)
@@ -133,8 +140,7 @@ def create_embedding_generator_signature(feature_type2name, task_type):
     return [input_signature]
 
 
-def create_scorer_input_signature(task_type, feature_type_to_name, num_doc_fields, num_user_fields, num_deep_ftrs, has_query, nums_dense_ftrs,
-                                  nums_sparse_ftrs):
+def create_scorer_input_signature(task_type, feature_type_to_name, feature_name_to_num, num_doc_fields, num_user_fields, num_deep_ftrs, has_query):
     """Returns the input signature for scorer"""
     ftr_type_to_scorer_tensor_spec = TASK_TYPE_TO_SCORER_TENSOR_SPEC[task_type]
     input_signature = {}
@@ -150,15 +156,20 @@ def create_scorer_input_signature(task_type, feature_type_to_name, num_doc_field
         ftr_type = InternalFtrType.USER_FTRS
         input_signature[ftr_type] = ftr_type_to_scorer_tensor_spec[ftr_type](num_user_fields, num_deep_ftrs)
 
-    if nums_dense_ftrs:
-        ftr_type = InputFtrType.DENSE_FTRS_COLUMN_NAMES
-        for i, ftr_name in enumerate(as_list(feature_type_to_name.get(ftr_type, []))):
-            input_signature[ftr_name] = ftr_type_to_scorer_tensor_spec[ftr_type](ftr_name, nums_dense_ftrs[i])
+    ftr_type = InputFtrType.DENSE_FTRS_COLUMN_NAMES
+    if ftr_type in feature_type_to_name:
+        for ftr_name in feature_type_to_name[ftr_type]:
+            input_signature[ftr_name] = ftr_type_to_scorer_tensor_spec[ftr_type](ftr_name, feature_name_to_num[ftr_name])
 
-    if nums_sparse_ftrs:
-        ftr_type = InputFtrType.SPARSE_FTRS_COLUMN_NAMES
-        for i, ftr_name in enumerate(as_list(feature_type_to_name.get(ftr_type, []))):
-            input_signature[ftr_name] = ftr_type_to_scorer_tensor_spec[ftr_type](nums_sparse_ftrs[i])
+    ftr_type = InputFtrType.SPARSE_FTRS_COLUMN_NAMES
+    if ftr_type in feature_type_to_name:
+        for ftr_name in feature_type_to_name[ftr_type]:
+            input_signature[ftr_name] = ftr_type_to_scorer_tensor_spec[ftr_type](feature_name_to_num[ftr_name])
+
+    ftr_type = InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES
+    if ftr_type in feature_type_to_name:
+        for ftr_name in feature_type_to_name[ftr_type]:
+            input_signature[ftr_name] = ftr_type_to_scorer_tensor_spec[ftr_type](feature_name_to_num[ftr_name])
 
     if InputFtrType.TASK_ID_COLUMN_NAME in feature_type_to_name:
         ftr_type = InputFtrType.TASK_ID_COLUMN_NAME
@@ -171,15 +182,14 @@ def create_scorer_input_signature(task_type, feature_type_to_name, num_doc_field
 class DetextModel(tf.keras.models.Model):
     """DeText model. Please check the DeText design doc for more details """
 
-    def __init__(self, feature_type2name, task_type,
+    def __init__(self, feature_type2name, feature_name2num: dict,
+                 task_type,
                  use_deep,
                  use_dense_ftrs,
-                 nums_dense_ftrs,
                  use_sparse_ftrs,
                  sparse_embedding_size,
                  sparse_embedding_cross_ftr_combiner,
                  sparse_embedding_same_ftr_combiner,
-                 nums_sparse_ftrs,
                  num_hidden,
                  num_classes,
                  task_ids,
@@ -200,21 +210,24 @@ class DetextModel(tf.keras.models.Model):
 
         self._task_type = task_type
         self._feature_type2name = feature_type2name
+        self._feature_name2num = feature_name2num
 
         self._use_deep = use_deep
         self._use_dense_ftrs = use_dense_ftrs
         self._use_sparse_ftrs = use_sparse_ftrs
         self._use_wide = use_dense_ftrs or use_sparse_ftrs
+        self._use_shallow_tower_sparse_ftrs = InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES in feature_type2name
 
         self._task_ids = task_ids if task_ids is not None else [0]
         self._num_classes = num_classes
 
         self._rescale_dense_ftrs = rescale_dense_ftrs
-        self._nums_dense_ftrs = nums_dense_ftrs
-        self._total_num_dense_ftrs = sum(nums_dense_ftrs)
-        self._nums_sparse_ftrs = nums_sparse_ftrs
+        self._nums_dense_ftrs = get_feature_nums(feature_name2num, feature_type2name, InputFtrType.DENSE_FTRS_COLUMN_NAMES)
+        self._total_num_dense_ftrs = sum(self._nums_dense_ftrs)
+        self._nums_sparse_ftrs = get_feature_nums(feature_name2num, feature_type2name, InputFtrType.SPARSE_FTRS_COLUMN_NAMES)
         self._num_hidden = num_hidden
         self._activations = ['tanh'] * len(num_hidden)
+        self._nums_shallow_tower_sparse_ftrs = get_feature_nums(feature_name2num, feature_type2name, InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES)
 
         self.feature_name_type_converter = FeatureNameTypeConverter(task_type, feature_type2name)
         self.feature_grouper = FeatureGrouper()
@@ -228,11 +241,14 @@ class DetextModel(tf.keras.models.Model):
 
         if self._use_sparse_ftrs:
             self.sparse_embedding_layer = SparseEmbeddingLayer(sparse_embedding_size=sparse_embedding_size,
-                                                               nums_sparse_ftrs=nums_sparse_ftrs,
+                                                               nums_sparse_ftrs=self._nums_sparse_ftrs,
                                                                sparse_embedding_cross_ftr_combiner=sparse_embedding_cross_ftr_combiner,
                                                                sparse_embedding_same_ftr_combiner=sparse_embedding_same_ftr_combiner,
                                                                initializer='glorot_uniform'
                                                                )
+
+        if self._use_shallow_tower_sparse_ftrs:
+            self.shallow_tower = ShallowTowerLayer(self._nums_shallow_tower_sparse_ftrs, num_classes)
 
         self.num_sim_ftrs = 0
         if use_deep is True:
@@ -255,12 +271,11 @@ class DetextModel(tf.keras.models.Model):
         self._scorer_input_signature = create_scorer_input_signature(
             task_type=self._task_type,
             feature_type_to_name=self._feature_type2name,
+            feature_name_to_num=self._feature_name2num,
             num_doc_fields=self.representation_layer.output_num_doc_fields if use_deep else 0,
             num_user_fields=self.representation_layer.output_num_user_fields if use_deep else 0,
             num_deep_ftrs=self.representation_layer.ftr_size if use_deep else 0,
             has_query=InputFtrType.QUERY_COLUMN_NAME in self._feature_type2name,
-            nums_dense_ftrs=self._nums_dense_ftrs,
-            nums_sparse_ftrs=self._nums_sparse_ftrs
         )
         self.generate_scores_given_deep_representations = tf.function(func=partial(self._generate_scores_given_deep_representations, training=False),
                                                                       input_signature=self._scorer_input_signature)
@@ -310,6 +325,12 @@ class DetextModel(tf.keras.models.Model):
 
         scoring_layer_inputs = {**multitask_features_inputs, **interaction_layer_outputs}
         scores = self.scoring_layer(scoring_layer_inputs)
+        if self._use_shallow_tower_sparse_ftrs:
+            wide_features_inputs = self.feature_name_type_converter({InternalFtrType.WIDE_FTR_BAG: inputs})[InternalFtrType.WIDE_FTR_BAG]
+            shallow_tower_inputs = {
+                InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES: wide_features_inputs[InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES]}
+            shallow_tower_offset = self.shallow_tower(shallow_tower_inputs)
+            scores += shallow_tower_offset
         return self.output_transform_layer(scores)
 
     def transform_wide_features(self, inputs):
@@ -350,7 +371,8 @@ class DetextModel(tf.keras.models.Model):
         return tf.compat.v1.where(tf.math.is_nan(dense_ftrs), tf.zeros_like(dense_ftrs), dense_ftrs)
 
 
-def create_detext_model(feature_type2name, task_type,
+def create_detext_model(feature_type2name, feature_name2num,
+                        task_type,
                         use_deep, use_dense_ftrs,
                         use_sparse_ftrs,
                         sparse_embedding_size,
@@ -363,20 +385,17 @@ def create_detext_model(feature_type2name, task_type,
                         emb_sim_func,
                         ftr_mean, ftr_std,
                         rescale_dense_ftrs,
-                        rep_layer_param,
-                        nums_dense_ftrs,
-                        nums_sparse_ftrs):
+                        rep_layer_param):
     """Creates a DetextModel instance for given params"""
-    keras_inputs = create_keras_inputs(feature_type2name, nums_dense_ftrs, nums_sparse_ftrs, task_type)
+    keras_inputs = create_keras_inputs(feature_type2name, feature_name2num, task_type)
     detext_model = DetextModel(feature_type2name=feature_type2name,
+                               feature_name2num=feature_name2num,
                                task_type=task_type,
                                use_deep=use_deep, use_dense_ftrs=use_dense_ftrs,
-                               nums_dense_ftrs=nums_dense_ftrs,
                                use_sparse_ftrs=use_sparse_ftrs,
                                sparse_embedding_size=sparse_embedding_size,
                                sparse_embedding_cross_ftr_combiner=sparse_embedding_cross_ftr_combiner,
                                sparse_embedding_same_ftr_combiner=sparse_embedding_same_ftr_combiner,
-                               nums_sparse_ftrs=nums_sparse_ftrs,
                                num_hidden=num_hidden,
                                num_classes=num_classes,
                                task_ids=task_ids,
