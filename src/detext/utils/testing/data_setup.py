@@ -8,7 +8,7 @@ from detext.utils.vocab_utils import read_vocab
 
 class DataSetup:
     """Class containing common setup on file paths, layer params used in unit tests"""
-    resource_dir = os.path.join(os.getcwd(), 'test', 'resources')
+    resource_dir = os.path.join(os.getcwd(), 'test', 'detext', 'resources')
     we_file = os.path.join(resource_dir, 'we.pkl')
     vocab_file = os.path.join(resource_dir, 'vocab.txt')
     vocab_file_for_id_ftr = vocab_file
