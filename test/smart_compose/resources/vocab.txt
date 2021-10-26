@@ -1,0 +1,16 @@
+[UNK]
+[CLS]
+[SEP]
+[PAD]
+build
+word
+function
+able
+test
+this
+is
+a
+source
+sentence
+target
+token
