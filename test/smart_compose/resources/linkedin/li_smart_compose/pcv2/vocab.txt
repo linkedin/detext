@@ -1,9 +1,0 @@
-[UNK]
-[CLS]
-[SEP]
-[PAD]
-build
-word
-function
-able
-test
