@@ -43,6 +43,11 @@ def main(argv):
     """
 
     argument = DetextArg.__from_argv__(argv[1:], error_on_unknown=False)
+    run_detext(argument)
+
+
+def run_detext(argument):
+    """ Launches DeText training program"""
     logging.set_verbosity(logging.INFO)
     logging.info(f"Args:\n {argument}")
 
