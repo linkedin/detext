@@ -210,6 +210,35 @@ class TestRunDeText(tf.test.TestCase, DataSetup):
         main(sys.argv)
         self._cleanUp(output)
 
+    def test_run_detext_libert_multilabel_classification(self):
+        """
+        This method tests run_detext for libert multi-label classification fine-tuning
+        """
+        output = os.path.join(DataSetup.out_dir, "cls_libert_model")
+        args = self.base_args + [
+            "--task_type", TaskType.MULTILABEL_CLASSIFICATION,
+            "--ftr_ext", "bert",
+            "--lr_bert", "0.00001",
+            "--bert_hub_url", DataSetup.libert_sp_hub_url,
+            "--num_units", "16",
+            f"--{InputFtrType.LABEL_COLUMN_NAME}", "label",
+            f"--{InputFtrType.DOC_TEXT_COLUMN_NAMES}", "query_text",
+            f"--{InputFtrType.USER_TEXT_COLUMN_NAMES}", "user_headline",
+            f"--{InputFtrType.DENSE_FTRS_COLUMN_NAMES}", "dense_ftrs",
+            f"--{InputFtrType.SHALLOW_TOWER_SPARSE_FTRS_COLUMN_NAMES}", "sparse_ftrs",
+            "--nums_shallow_tower_sparse_ftrs", "30",
+            "--nums_dense_ftrs", "8",
+            "--num_classes", "3",
+            "--pmetric", "recall",
+            "--all_metrics", "recall",
+            "--test_file", DataSetup.multilabel_cls_data_dir,
+            "--dev_file", DataSetup.multilabel_cls_data_dir,
+            "--train_file", DataSetup.multilabel_cls_data_dir,
+            "--out_dir", output]
+        sys.argv[1:] = args
+        main(sys.argv)
+        self._cleanUp(output)
+
     def _test_demo(self):
         # TODO: enable this test when move this script to open source DeText
         completed_process = run(['sh', 'run_detext.sh'], stderr=PIPE, cwd=f'{Path(__file__).parent}/resources')

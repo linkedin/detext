@@ -79,3 +79,20 @@ class Constant(metaclass=SingletonMeta):
 
             InputFtrType.DENSE_FTRS_COLUMN_NAMES: tf.io.VarLenFeature(dtype=tf.float32),
         }
+
+        self._MULTILABEL_CLASSIFICATION_FTR_TYPE_TO_SCHEMA = {
+            InputFtrType.WEIGHT_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.float32),
+            InputFtrType.UID_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.int64),
+            InputFtrType.TASK_ID_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.int64),
+
+            InputFtrType.LABEL_COLUMN_NAME: tf.io.FixedLenFeature(shape=[], dtype=tf.float32),
+
+            InputFtrType.QUERY_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),  # not used
+            InputFtrType.USER_TEXT_COLUMN_NAMES: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),
+            InputFtrType.USER_ID_COLUMN_NAMES: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),
+
+            InputFtrType.DOC_TEXT_COLUMN_NAMES: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),
+            InputFtrType.DOC_ID_COLUMN_NAMES: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),
+
+            InputFtrType.DENSE_FTRS_COLUMN_NAMES: tf.io.VarLenFeature(dtype=tf.float32),
+        }

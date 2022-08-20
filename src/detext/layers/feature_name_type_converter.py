@@ -137,13 +137,15 @@ def get_deep_features_inputs_classification(features, feature_type2name):
 TASK_TYPE_TO_GET_WIDE_FEATURES_FN = {
     TaskType.RANKING: get_wide_features_inputs_ranking,
     TaskType.CLASSIFICATION: get_wide_features_inputs_classification,
-    TaskType.BINARY_CLASSIFICATION: get_wide_features_inputs_classification
+    TaskType.BINARY_CLASSIFICATION: get_wide_features_inputs_classification,
+    TaskType.MULTILABEL_CLASSIFICATION: get_wide_features_inputs_classification
 }
 
 TASK_TYPE_TO_GET_DEEP_FEATURES_FN = {
     TaskType.RANKING: get_deep_features_inputs_ranking,
     TaskType.CLASSIFICATION: get_deep_features_inputs_classification,
-    TaskType.BINARY_CLASSIFICATION: get_deep_features_inputs_classification
+    TaskType.BINARY_CLASSIFICATION: get_deep_features_inputs_classification,
+    TaskType.MULTILABEL_CLASSIFICATION: get_deep_features_inputs_classification
 }
 
 

@@ -40,7 +40,7 @@ class OutputFtrType:
     DETEXT_CLS_PROBABILITIES = 'detext_cls_probabilities'
     DETEXT_CLS_LOGITS = 'detext_cls_logits'
     DETEXT_CLS_PREDICTED_LABEL = 'detext_cls_predicted_label'
-
+    DETEXT_CLS_PREDICTED_LABELS = 'detext_cls_predicted_labels'
     DETEXT_RANKING_SCORES = 'detext_ranking_scores'
 
 
@@ -87,6 +87,8 @@ class TaskType:
     MULTICLASS_CLASSIFICATION = 'multiclass_classification'
     # Binary classification mode. Model output is a scalar (e.g., prob for sample being positive)
     BINARY_CLASSIFICATION = 'binary_classification'
+    # Multi-label multi-class classification mode. Model output is a one-dim tensor (e.g., one prob for each label class)
+    MULTILABEL_CLASSIFICATION = 'multilabel_classification'
 
 
 def as_list(value):

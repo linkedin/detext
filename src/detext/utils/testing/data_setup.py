@@ -27,6 +27,7 @@ class DataSetup:
     multitask_data_dir = os.path.join(resource_dir, "train", "multitask", "tfrecord")
     cls_data_dir = os.path.join(resource_dir, "train", "classification", "tfrecord")
     binary_cls_data_dir = os.path.join(resource_dir, "train", "binary_classification", "tfrecord")
+    multilabel_cls_data_dir = os.path.join(resource_dir, "train", "multilabel_classification", "tfrecord")
     ranking_data_dir = os.path.join(resource_dir, "train", "ranking", "tfrecord")
 
     vocab_table_py = read_vocab(vocab_file)
