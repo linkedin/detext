@@ -36,7 +36,7 @@ def _multilabel_classification_output_transform(inputs):
     """
     # shape: [batch_size, num_classes]
     inputs = tf.squeeze(inputs, axis=-2)
-    # Return logits, softmax, and label predictions (as bool tensor) for multi-label classification
+    # Return probabilities, logits, and label predictions (as bool tensor) for multi-label classification
     return {OutputFtrType.DETEXT_CLS_PROBABILITIES: tf.nn.sigmoid(inputs),
             OutputFtrType.DETEXT_CLS_LOGITS: inputs,
             # 0.'s Tensor with 1.'s to represent predicted label:

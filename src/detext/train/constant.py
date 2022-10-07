@@ -84,7 +84,7 @@ class Constant(metaclass=SingletonMeta):
             InputFtrType.WEIGHT_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.float32),
             InputFtrType.UID_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.int64),
             InputFtrType.TASK_ID_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.int64),
-
+            # For MULTILABEL_CLASSIFICATION, label_column is multi-hot encoded (shape[batch_size][num_classes], defined in data_fn.py)
             InputFtrType.LABEL_COLUMN_NAME: tf.io.FixedLenFeature(shape=[], dtype=tf.float32),
 
             InputFtrType.QUERY_COLUMN_NAME: tf.io.FixedLenFeature(shape=[1], dtype=tf.string),  # not used

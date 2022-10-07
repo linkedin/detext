@@ -64,8 +64,8 @@ class PrecisionMetric(tf.keras.metrics.Precision):
         :param labels: Tensor Labels. Shape=[batch_size, max_group_size(1)] for ranking. For binary classification, shape=[batch_size]
         :param sample_weight: Sample weight. Check the inherited class method for more detail
         """
-        probabilities = tf.round(tf.nn.sigmoid(scores))  # Convert to probabilities in range [0, 1]
-        return super(PrecisionMetric, self).update_state(labels, probabilities, sample_weight)
+        predictions = tf.round(tf.nn.sigmoid(scores))  # Convert to predictions in {0, 1}
+        return super(PrecisionMetric, self).update_state(labels, predictions, sample_weight)
 
 
 class RecallMetric(tf.keras.metrics.Recall):
@@ -78,8 +78,8 @@ class RecallMetric(tf.keras.metrics.Recall):
         :param labels: Tensor Labels. Shape=[batch_size, num_classes] for multilabel classification
         :param sample_weight: Sample weight. Check the inherited class method for more detail
         """
-        probabilities = tf.round(tf.nn.sigmoid(scores))  # Convert to probabilities in range [0, 1]
-        return super(RecallMetric, self).update_state(labels, probabilities, sample_weight)
+        predictions = tf.round(tf.nn.sigmoid(scores))  # Convert to predictions in {0, 1}
+        return super(RecallMetric, self).update_state(labels, predictions, sample_weight)
 
 
 class ConfusionMatrixMetric(tf.keras.metrics.Metric):

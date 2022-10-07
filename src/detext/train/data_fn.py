@@ -565,7 +565,7 @@ def multilabel_classification_transform_fn(dataset,
     features_schema = _get_tfrecord_feature_parsing_schema(feature_type2name,
                                                            Constant()._MULTILABEL_CLASSIFICATION_FTR_TYPE_TO_SCHEMA,
                                                            TaskType.MULTILABEL_CLASSIFICATION)
-    # Set shape of labels to [num_classes] for multi-label classification (using one-hot encoding)
+    # Set shape of labels to [num_classes] for multi-label classification (using multi-hot encoding)
     features_schema[feature_type2name[InputFtrType.LABEL_COLUMN_NAME]] = tf.io.FixedLenFeature(shape=[num_classes], dtype=tf.float32)
     dataset = dataset.map(partial(_process_data, features_schema=features_schema),
                           num_parallel_calls=num_parallel_calls)
