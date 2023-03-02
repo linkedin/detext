@@ -62,10 +62,10 @@ def get_input_fn_common(pattern, batch_size, mode, hparams):
                                 **_get_func_param_from_hparams(_get_input_fn_common, hparams, ('pattern', 'batch_size', 'mode')))
 
 
-def _get_input_fn_common(pattern, batch_size, mode, task_type, feature_type2name, feature_name2num: dict):
+def _get_input_fn_common(pattern, batch_size, mode, num_classes, task_type, feature_type2name, feature_name2num: dict):
     """ Returns the common input function used in DeText training and evaluation"""
     return lambda ctx: input_fn_tfrecord(
-        input_pattern=pattern, batch_size=batch_size, mode=mode, task_type=task_type,
+        input_pattern=pattern, batch_size=batch_size, num_classes=num_classes, mode=mode, task_type=task_type,
         feature_type2name=feature_type2name,
         feature_name2num=feature_name2num,
         input_pipeline_context=ctx
@@ -150,6 +150,14 @@ def _get_func_param_from_hparams(func, hparams: HParams, exclude_lst=('self', 'a
         if param in exclude_lst:
             continue
         param_dct[param] = getattr(hparams, param)
+        # Allows num_classes to be passed into multilabel_classification_transform_fn() to ensure correct 'labels' Tensor shape
+        if param == 'num_classes':  # Set default value for num_classes to 0 if not included
+            try:
+                param_dct[param] = getattr(hparams, param)
+            except AttributeError:
+                param_dct[param] = 0
+        else:
+            param_dct[param] = getattr(hparams, param)
 
     return param_dct
 

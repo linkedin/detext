@@ -54,6 +54,34 @@ class AUCMetric(tf.keras.metrics.AUC):
         return super(AUCMetric, self).update_state(labels, prob, sample_weight)
 
 
+class PrecisionMetric(tf.keras.metrics.Precision):
+    """ Metric for computing Precision given DeText format input """
+
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores as logits. Shape=[batch_size, max_group_size(1)] for ranking. For classification, shape=[batch_size]
+        :param labels: Tensor Labels. Shape=[batch_size, max_group_size(1)] for ranking. For binary classification, shape=[batch_size]
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        predictions = tf.round(tf.nn.sigmoid(scores))  # Convert to predictions in {0, 1}
+        return super(PrecisionMetric, self).update_state(labels, predictions, sample_weight)
+
+
+class RecallMetric(tf.keras.metrics.Recall):
+    """ Metric for computing Recall given DeText format input """
+
+    def update_state(self, labels, scores, sample_weight=None):
+        """ Accumulates metric statistics
+
+        :param scores: Tensor Predicted scores as logits. Shape=[batch_size, num_classes] for multilabel classification.
+        :param labels: Tensor Labels. Shape=[batch_size, num_classes] for multilabel classification
+        :param sample_weight: Sample weight. Check the inherited class method for more detail
+        """
+        predictions = tf.round(tf.nn.sigmoid(scores))  # Convert to predictions in {0, 1}
+        return super(RecallMetric, self).update_state(labels, predictions, sample_weight)
+
+
 class ConfusionMatrixMetric(tf.keras.metrics.Metric):
     """
     Metric for computing confusion matrix
@@ -97,9 +125,14 @@ def get_metric_fn(metric_name, task_type, num_classes):
                        'auc': lambda: AUCMetric(num_thresholds=_DEFAULT_AUC_NUM_THRESHOLD, name=metric_name)}
 
     classification_metrics = {
-        'accuracy': lambda: AccuracyMetric(name=metric_name) if task_type == TaskType.CLASSIFICATION else BinaryAccuracyMetric(name=metric_name),
+        'accuracy': lambda: BinaryAccuracyMetric(name=metric_name) if task_type == TaskType.BINARY_CLASSIFICATION else AccuracyMetric(name=metric_name),
         'confusion_matrix': lambda: ConfusionMatrixMetric(num_classes=num_classes, name=metric_name),
         'auc': lambda: AUCMetric(num_thresholds=_DEFAULT_AUC_NUM_THRESHOLD, name=metric_name)
+    }
+
+    multilabel_classification_metrics = {
+        'precision': lambda: PrecisionMetric(name=metric_name),
+        'recall': lambda: RecallMetric(name=metric_name)
     }
 
     # Add ranking metric function
@@ -117,6 +150,14 @@ def get_metric_fn(metric_name, task_type, num_classes):
     if task_type in [TaskType.CLASSIFICATION, TaskType.BINARY_CLASSIFICATION]:
         assert num_classes is not None and num_classes > 0, f'num_classes has to be positive integer. Current num_classes: {num_classes}'
         for clf_metric_name, metric_fn in classification_metrics.items():
+            if metric_name == clf_metric_name:
+                return metric_fn
+        raise ValueError(f'Unsupported metric name: {metric_name}')
+
+        # Switch to multi-label classification metrics
+    if task_type in [TaskType.MULTILABEL_CLASSIFICATION]:
+        assert num_classes is not None and num_classes > 0, f'num_classes has to be positive integer. Current num_classes: {num_classes}'
+        for clf_metric_name, metric_fn in multilabel_classification_metrics.items():
             if metric_name == clf_metric_name:
                 return metric_fn
         raise ValueError(f'Unsupported metric name: {metric_name}')

@@ -97,6 +97,7 @@ def add_classification_sparse_feature_schema(ftr_name_2_schema, ftr_name):
 _TASK_TYPE_TO_ADD_SPARSE_FEATURE_SCHEMA_FN = {
     TaskType.RANKING: add_ranking_sparse_feature_schema,
     TaskType.CLASSIFICATION: add_classification_sparse_feature_schema,
+    TaskType.MULTILABEL_CLASSIFICATION: add_classification_sparse_feature_schema
 }
 
 
@@ -265,6 +266,7 @@ def input_fn_tfrecord(input_pattern,
                       feature_type2name: dict,
                       feature_name2num: dict,
                       task_type=TaskType.RANKING,
+                      num_classes=0,
                       block_length=100,
                       prefetch_size=tf.data.experimental.AUTOTUNE,
                       num_parallel_calls=tf.data.experimental.AUTOTUNE,
@@ -295,31 +297,46 @@ def input_fn_tfrecord(input_pattern,
     task_type_to_transform_fn = {
         # Ranking input transform function
         TaskType.RANKING:
-            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size:
+            lambda dataset, batch_size, mode, num_classes, feature_type2name, feature_name2num, output_buffer_size, prefetch_size:
             ranking_transform_fn(dataset=dataset,
                                  batch_size=batch_size,
                                  mode=mode,
+                                 num_classes=num_classes,
                                  feature_type2name=feature_type2name,
                                  feature_name2num=feature_name2num,
                                  output_buffer_size=output_buffer_size,
                                  prefetch_size=prefetch_size),
         # Classification input transform function
         TaskType.CLASSIFICATION:
-            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
+            lambda dataset, batch_size, mode, num_classes, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
             classification_transform_fn(dataset=dataset,
                                         batch_size=batch_size,
                                         mode=mode,
+                                        num_classes=num_classes,
                                         feature_type2name=feature_type2name,
                                         output_buffer_size=output_buffer_size,
                                         feature_name2num=feature_name2num,
                                         prefetch_size=prefetch_size
                                         ),
+        # Multi-label Classification input transform function
+        TaskType.MULTILABEL_CLASSIFICATION:
+            lambda dataset, batch_size, mode, num_classes, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
+            multilabel_classification_transform_fn(dataset=dataset,
+                                                   batch_size=batch_size,
+                                                   mode=mode,
+                                                   num_classes=num_classes,
+                                                   feature_type2name=feature_type2name,
+                                                   output_buffer_size=output_buffer_size,
+                                                   feature_name2num=feature_name2num,
+                                                   prefetch_size=prefetch_size
+                                                   ),
         # Binary classification input transform function
         TaskType.BINARY_CLASSIFICATION:
-            lambda dataset, batch_size, mode, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
+            lambda dataset, batch_size, mode, num_classes, feature_type2name, feature_name2num, output_buffer_size, prefetch_size, *args:
             classification_transform_fn(dataset=dataset,
                                         batch_size=batch_size,
                                         mode=mode,
+                                        num_classes=num_classes,
                                         feature_type2name=feature_type2name,
                                         output_buffer_size=output_buffer_size,
                                         feature_name2num=feature_name2num,
@@ -329,6 +346,7 @@ def input_fn_tfrecord(input_pattern,
     return task_type_to_transform_fn[task_type](dataset,
                                                 batch_size,
                                                 mode,
+                                                num_classes,
                                                 feature_type2name,
                                                 feature_name2num,
                                                 output_buffer_size,
@@ -377,6 +395,7 @@ def _add_default_ftr_field(features, labels, feature_type2name: dict):
 def ranking_transform_fn(dataset,
                          batch_size,
                          mode,
+                         num_classes,
                          feature_type2name,
                          feature_name2num,
                          output_buffer_size,
@@ -467,6 +486,7 @@ def batch_dataset(dataset: tf.data.Dataset, feature_type2name, feature_name2num,
 def classification_transform_fn(dataset,
                                 batch_size,
                                 mode,
+                                num_classes,
                                 feature_type2name,
                                 feature_name2num,
                                 output_buffer_size,
@@ -483,7 +503,6 @@ def classification_transform_fn(dataset,
 
     def _process_data(record, features_schema):
         example = tf.io.parse_single_example(serialized=record, features=features_schema)
-
         example = _cast_features_to_smaller_dtype(example, feature_type2name)
         example = _convert_ftrs_to_dense_tensor(example, feature_type2name, Constant()._CLASSIFICATION_FTR_TYPE_TO_DENSE_DEFAULT_VAL)
         example = _assemble_sparse_ftrs_classification(example, feature_type2name, feature_name2num)
@@ -499,6 +518,56 @@ def classification_transform_fn(dataset,
         return features, labels
 
     features_schema = _get_tfrecord_feature_parsing_schema(feature_type2name, Constant()._CLASSIFICATION_FTR_TYPE_TO_SCHEMA, TaskType.CLASSIFICATION)
+    dataset = dataset.map(partial(_process_data, features_schema=features_schema),
+                          num_parallel_calls=num_parallel_calls)
+
+    # drop_remainder=True to avoid input batch_size=0 issue in evaluation mode in multi gpu training
+    dataset = dataset.batch(batch_size, drop_remainder=True).map(
+        partial(_add_default_ftr_field, feature_type2name=feature_type2name),
+        num_parallel_calls=num_parallel_calls
+    ).prefetch(prefetch_size)
+    return dataset
+
+
+def multilabel_classification_transform_fn(dataset,
+                                           batch_size,
+                                           mode,
+                                           num_classes,
+                                           feature_type2name,
+                                           feature_name2num,
+                                           output_buffer_size,
+                                           prefetch_size=tf.data.experimental.AUTOTUNE,
+                                           num_parallel_calls=tf.data.experimental.AUTOTUNE):
+    """ Preprocesses datasets for multi-label classification task including
+        1. dataset shuffling
+        2. record parsing
+        3. padding and batching
+    """
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        dataset = dataset.shuffle(output_buffer_size)
+        dataset = dataset.repeat()
+
+    def _process_data(record, features_schema):
+        example = tf.io.parse_single_example(serialized=record, features=features_schema)
+        example = _cast_features_to_smaller_dtype(example, feature_type2name)
+        example = _convert_ftrs_to_dense_tensor(example, feature_type2name, Constant()._CLASSIFICATION_FTR_TYPE_TO_DENSE_DEFAULT_VAL)
+        example = _assemble_sparse_ftrs_classification(example, feature_type2name, feature_name2num)
+
+        feature_type_to_squeeze = [InputFtrType.QUERY_COLUMN_NAME, InputFtrType.USER_ID_COLUMN_NAMES,
+                                   InputFtrType.USER_TEXT_COLUMN_NAMES, InputFtrType.DOC_TEXT_COLUMN_NAMES, InputFtrType.DOC_ID_COLUMN_NAMES,
+                                   InputFtrType.WEIGHT_COLUMN_NAME,
+                                   InputFtrType.TASK_ID_COLUMN_NAME,
+                                   InputFtrType.UID_COLUMN_NAME]
+        example = _squeeze_ftrs(example, feature_type2name, feature_type_to_squeeze)
+        example = _read_specified_features(example, feature_type2name)
+        features, labels = _split_features_and_labels(example, feature_type2name)
+        return features, labels
+
+    features_schema = _get_tfrecord_feature_parsing_schema(feature_type2name,
+                                                           Constant()._MULTILABEL_CLASSIFICATION_FTR_TYPE_TO_SCHEMA,
+                                                           TaskType.MULTILABEL_CLASSIFICATION)
+    # Set shape of labels to [num_classes] for multi-label classification (using multi-hot encoding)
+    features_schema[feature_type2name[InputFtrType.LABEL_COLUMN_NAME]] = tf.io.FixedLenFeature(shape=[num_classes], dtype=tf.float32)
     dataset = dataset.map(partial(_process_data, features_schema=features_schema),
                           num_parallel_calls=num_parallel_calls)
 

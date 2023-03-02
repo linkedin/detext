@@ -178,6 +178,9 @@ def compute_loss(task_type, ltr_loss_fn, tfr_loss_fn, tfr_lambda_weights, use_tf
         TaskType.BINARY_CLASSIFICATION:
             lambda scores, labels, weight, *args:
             compute_binary_classification_loss(scores, labels, weight),
+        TaskType.MULTILABEL_CLASSIFICATION:
+            lambda scores, labels, weight, *args:
+            compute_multilabel_classification_loss(scores, labels, weight)
     }
 
     task_loss = task_type_to_loss_fn[task_type](scores, labels, weight, ltr_loss_fn, tfr_loss_fn, tfr_lambda_weights, use_tfr_loss)
@@ -245,3 +248,18 @@ def compute_binary_classification_loss(scores, labels, weight):
     return tf.compat.v1.losses.sigmoid_cross_entropy(logits=tf.expand_dims(scores, axis=1),
                                                      multi_class_labels=tf.expand_dims(labels, axis=1),
                                                      weights=tf.expand_dims(weight, axis=1))
+
+
+def compute_multilabel_classification_loss(scores, labels, weight):
+    """ Compute multi-label classification loss
+
+    :param scores Shape=[batch_size, num_classes]
+    :param labels Shape=[batch_size, num_classes]
+    :param weight Shape=[batch_size]
+    """
+    # Multi-Label Classification loss
+    labels = tf.cast(labels, tf.int32)
+    return tf.compat.v1.losses.sigmoid_cross_entropy(logits=scores,
+                                                     multi_class_labels=labels,
+                                                     # Reshape weight to [batch_size, num_classes]
+                                                     weights=tf.reshape(tf.repeat(weight, labels.shape[1]), labels.shape))

@@ -332,7 +332,11 @@ class OptimizationArg(Arg):
     learning_rate: float = 1.0  # Learning rate. Adam: 0.001 | 0.0001
 
     task_type: str = TaskType.RANKING  # Task type. ranking/binary classification/classification(multiclass classification)
-    __task_type = {'choices': [TaskType.RANKING, TaskType.CLASSIFICATION, TaskType.MULTICLASS_CLASSIFICATION, TaskType.BINARY_CLASSIFICATION]}
+    __task_type = {'choices': [TaskType.RANKING,
+                               TaskType.CLASSIFICATION,
+                               TaskType.MULTICLASS_CLASSIFICATION,
+                               TaskType.BINARY_CLASSIFICATION,
+                               TaskType.MULTILABEL_CLASSIFICATION]}
     num_classes: int = 1  # Number of classes for multi-class classification tasks.
 
     l1: float = 0.  # Scale of L1 regularization
@@ -377,7 +381,10 @@ class OptimizationArg(Arg):
             assert self.num_classes > 1, '`num_classes must be larger than 1 for classification/multiclass classification `task_type`.'
             assert self.pmetric == 'accuracy', 'Primary metric (`pmetric`) must be set to \'accuracy\' ' \
                                                'for classification/multiclass classification.'
-
+        if self.task_type == TaskType.MULTILABEL_CLASSIFICATION:
+            assert self.num_classes > 1, '`num_classes must be larger than 1 for multilabel classification `task_type`.'
+            assert self.pmetric == 'recall', 'Primary metric (`pmetric`) must be set to \'recall\' ' \
+                                             'for multi-label classification.'
         if self.task_type == TaskType.BINARY_CLASSIFICATION:
             assert self.num_classes in [1, 2], '`num_classes must be set to 1 or 2 (either is ok) for binary_classification `task_type`.'
             self.num_classes = 1

@@ -297,11 +297,54 @@ def create_sample_tfrecord_for_binary_classification(out_file):
         writer.write(example_proto.SerializeToString())
 
 
+def create_sample_tfrecord_for_multilabel_classification(out_file):
+    """Creates sample tfrecord to out_file"""
+    print("Composing fake tfrecord to file {}".format(out_file))
+    with tf.io.TFRecordWriter(out_file) as writer:
+        # Example 1
+        features = {
+            # "label": _float_feature([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            "label": _float_feature([1., 1., 0.]),
+            "query_text": _bytes_feature([b"hello1"]),
+            "dense_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0, 22.0, 19.0]),
+            "doc_title": _bytes_feature([b"document title 1 linkedin"]),
+            "user_headline": _bytes_feature([b"user headline one?"]),
+
+            "sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0]),
+
+            "shallow_tower_sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "shallow_tower_sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
+        }
+        example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+        writer.write(example_proto.SerializeToString())
+
+        # Example 2
+        features = {
+            # "label": _float_feature([1.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
+            "label": _float_feature([0., 1., 1.]),
+            "query_text": _bytes_feature([b"hello2"]),
+            "dense_ftrs": _float_feature([23.0, 14.0, 44.0, -1.0, 22.0, 19.0, 22.0, 19.0]),
+            "doc_title": _bytes_feature([b"document title 2 linkedin"]),
+            "user_headline": _bytes_feature([b"user headline two?"]),
+
+            "sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0]),
+
+            "shallow_tower_sparse_ftrs_indices0": _int64_feature([0, 2, 7]),
+            "shallow_tower_sparse_ftrs_values": _float_feature([1.0, 0.0, 7.0])
+        }
+        example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+        writer.write(example_proto.SerializeToString())
+
+
 if __name__ == '__main__':
     from detext.utils.testing.data_setup import DataSetup
 
     # make_we_file(DataSetup.vocab_file, embedding_size=DataSetup.num_units, output_path=DataSetup.we_file)
     out_file = DataSetup.binary_cls_data_dir + '/test.tfrecord'
     create_sample_tfrecord_for_binary_classification(out_file)
+    out_file = DataSetup.multilabel_cls_data_dir + '/test.tfrecord'
+    create_sample_tfrecord_for_multilabel_classification(out_file)
     # out_file = DataSetup.ranking_data_dir + '/test.tfrecord'
     # create_sample_tfrecord_for_ranking(out_file)
